@@ -20,17 +20,22 @@ using std::string;
 
 namespace net {
 
-  int(*create_soc )(int, int, int)                          = socket;
-  int(*connect_soc)(int, const struct sockaddr*, socklen_t) = connect;
-  ssize_t(*write_soc)(int, const void*, size_t)             = write;
-  ssize_t(*read_soc)(int, void*, size_t)                    = read;
+  int(*soc_socket)(int, int, int)                              = socket;
+  int(*soc_connect)(int, const struct sockaddr*, socklen_t)    = connect;
+  int(*soc_close)(int)                                         = close;
+  ssize_t(*soc_recv)(int, void*, size_t, int)                  = recv;
+  ssize_t(*soc_send)(int, const void*, size_t, int)            = send;
+  ssize_t(*soc_recvfrom)
+  (int, void*, size_t, int, sockaddr*, socklen_t*)             = recvfrom;
+  ssize_t(*soc_sendto)
+  (int, const void*, size_t, int, const sockaddr*, socklen_t)  = sendto;
 
   class socket {
     public:
 
       /* constructors */
       socket();
-      socket(const int& fd);
+      socket(const int& fd, sockaddr* src, socklen_t len);
       socket(const string& host, const string& port, bool tcp = true);
       socket(const socket& cpy);
 
@@ -39,56 +44,66 @@ namespace net {
 
       /* assignment operators */
       const socket& operator=(const socket& asn);
-      const int&    operator=(const int&    asn);
 
       /* functionality */
       void connect(const string& host, const string& port, bool tcp = true);
 
       template<typename _t>
-      void write(const _t& msg) const;
+      int  send(const _t* buf, const size_t len, int flags = 0) const;
 
       template<typename _t>
-      _t* read() const;
+      int  recv(      _t* buf, const size_t len, int flags = 0) const;
 
       /* getters/setters */
-      inline bool connected() const { return conn; }
-      inline  operator bool() const { return conn; }
+      inline bool connected() const { return _conn; }
+      inline  operator bool() const { return _conn; }
 
-      //static socket listen(const string& port, bool tcp = true);
+      inline int  fd()  const { return _fd;   }
+      inline bool tcp() const { return _tcp;  }
+      inline bool udp() const { return !_tcp; }
 
     protected:
 
       void check_close();
 
-      int  fd;
-      int* refs;
-      bool conn;
+      int       _fd;
+      int*      _refs;
+      bool      _conn;
+      bool      _tcp;
+      sockaddr* _src;
+      socklen_t _len;
   };
 
   /**
    * TODO
    *
-   * @param msg
+   * @param buf
+   * @param len
+   * @param flags
+   * @return
    */
   template<typename _t>
-  void socket::write(const _t& msg) const {
-    if(write_soc(fd, &msg, sizeof(_t)) != sizeof(_t))
-        { /* throw exception */ }
+  int net::socket::send(const _t* buf, const size_t len, int flags) const {
+    if(_tcp)
+      return soc_send(_fd, buf, len, flags);
+    return soc_sendto(_fd, buf, len, flags, _src, _len);
   }
 
   /**
    * TODO
    *
+   * @param buf
+   * @param len
+   * @param flags
    * @return
    */
   template<typename _t>
-  _t* socket::read() const {
-    _t* buf = new _t();
+  int net::socket::recv(_t* buf, const size_t len, int flags) const {
+    socklen_t cpy = _len;
 
-    if(read_soc(fd, buf, sizeof(_t)) != sizeof(_t))
-      { /* throw exception */ }
-
-    return buf;
+    if(_tcp)
+      return soc_recv  (_fd, buf, len, flags);
+    return soc_recvfrom(_fd, buf, len, flags, _src, &cpy);
   }
 }
 
