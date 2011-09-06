@@ -68,6 +68,7 @@ bool net::_service::add_port(port_t port, bool tcp) {
 
   FD_SET(fd, &ports_master);
   ports[port] = fd;
+  types[port] = tcp;
   ports_max = std::max(fd, ports_max);
 
   soc_listen(fd, PENDING);
@@ -106,7 +107,8 @@ net::port_t net::_service::add_any_port(bool tcp) {
 
   port = ((struct sockaddr_in*)curr->ai_addr)->sin_port;
   FD_SET(fd, &ports_master);
-  ports[fd] = fd;
+  ports[port] = fd;
+  types[port] = tcp;
   ports_max = std::max(fd, ports_max);
 
   soc_listen(fd, PENDING);

@@ -8,24 +8,23 @@
 #include <socket.hpp>
 #include <common.hpp>
 
+#include <limits>
 #include <cstring>
 #include <string>
-using std::string;
 #include <sstream>
-using std::istringstream;
-
 #include <getopt.h>
+#include <cstdlib>
+
 
 void usage(const string& exe) {
   exit(-1);
 }
 
 int main(int argc, char** argv) {
-  int c, count = 0;
   unsigned int num;
-  string server;
-  string port;
-  istringstream istr;
+  std::string server;
+  std::string port;
+  std::istringstream istr;
   bool tcp = false;
   bool x, s, p, t;
   x = s = p = t = false;
@@ -52,8 +51,11 @@ int main(int argc, char** argv) {
         s = true;
         break;
       case 'p':
-        port = optarg;
         p = true;
+        port = std::atoi(optarg);
+        if(port < 0 || port > std::numeric_limits<unsigned short>::max()) {
+          //TODO error
+        }
         break;
       default:
         usage(argv[0]);
@@ -69,6 +71,7 @@ int main(int argc, char** argv) {
   r = conn.read<reply>();
 
   // THIS IS AWSOME!!!!!!!!
+  return 0;
 }
 
 

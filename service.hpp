@@ -29,7 +29,8 @@ namespace net {
   class _service {
     public:
 
-      typedef std::map<port_t, int> port_map_t;
+      typedef std::map<port_t, int>  port_map_t;
+      typedef std::map<port_t, bool> type_map_t;
       typedef port_map_t::iterator                iterator;
       typedef port_map_t::const_iterator          const_iterator;
       typedef port_map_t::reverse_iterator        reverse_iterator;
@@ -58,6 +59,7 @@ namespace net {
       fd_set       ports_master;
       int          ports_max;
       port_map_t   ports;
+      type_map_t   types;
       unsigned int read_s;
   };
 
@@ -111,7 +113,9 @@ namespace net {
 
       for(auto iter = socs.begin(); iter != socs.end(); iter++) {
         if(FD_ISSET(iter->fd(), &use)) {
-          callback(*iter, args...);
+          if(!callback(*iter, args...)) {
+            FD_CLEAR(&master, iter->fd());
+          }
         }
       }
     }
