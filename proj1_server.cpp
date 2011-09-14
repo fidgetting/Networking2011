@@ -37,6 +37,8 @@ int main(int argc, char** argv) {
   int port, c;
   net::sync_service svc;
 
+  port = -1;
+
   while((c = getopt(argc, argv, "t:p:")) > 0) {
     switch(c) {
       case 't':
