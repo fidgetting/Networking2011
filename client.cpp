@@ -8,6 +8,7 @@
 #include <socket.hpp>
 #include <common.hpp>
 
+#include <iostream>
 #include <limits>
 #include <cstring>
 #include <string>
@@ -17,19 +18,21 @@
 
 
 void usage(const string& exe) {
+  std::cout << "usage: " << exe << std::endl;
   exit(-1);
 }
 
 int main(int argc, char** argv) {
-  unsigned int num;
+  unsigned int num = 0;
   std::string server;
   std::string port;
   std::istringstream istr;
   bool tcp = false;
   bool x, s, p, t;
+  int c;
   x = s = p = t = false;
 
-  while((c = getopt(argc, argv, "x:t:s:p:")) != 0) {
+  while((c = getopt(argc, argv, "x:t:s:p:")) > 0) {
     switch(c) {
       case 'x':
         istr.str() = optarg;
@@ -52,10 +55,13 @@ int main(int argc, char** argv) {
         break;
       case 'p':
         p = true;
-        port = std::atoi(optarg);
-        if(port < 0 || port > std::numeric_limits<unsigned short>::max()) {
+        port = optarg;
+        c = atoi(port.c_str());
+
+        if(c < 0 || c > std::numeric_limits<unsigned short>::max()) {
           //TODO error
         }
+
         break;
       default:
         usage(argv[0]);
@@ -63,14 +69,14 @@ int main(int argc, char** argv) {
     }
   }
 
-  net::socket conn(server, port, tcp);
+  std::cout << server << " " << port << " " << tcp << std::endl;
+  net::sync_socket conn(server, port, tcp);
   message m(num);
-  reply* r;
+  reply r;
 
-  conn.write<message>(m);
-  r = conn.read<reply>();
+  conn.send(&m, sizeof(m));
+  conn.recv(&r, sizeof(r));
 
-  // THIS IS AWSOME!!!!!!!!
   return 0;
 }
 

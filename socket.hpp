@@ -20,30 +20,31 @@ using std::string;
 
 namespace net {
 
-  int(*soc_socket)(int, int, int)                              = socket;
-  int(*soc_connect)(int, const struct sockaddr*, socklen_t)    = connect;
-  int(*soc_close)(int)                                         = close;
-  ssize_t(*soc_recv)(int, void*, size_t, int)                  = recv;
-  ssize_t(*soc_send)(int, const void*, size_t, int)            = send;
-  ssize_t(*soc_recvfrom)
-  (int, void*, size_t, int, sockaddr*, socklen_t*)             = recvfrom;
-  ssize_t(*soc_sendto)
-  (int, const void*, size_t, int, const sockaddr*, socklen_t)  = sendto;
+  extern int    (*soc_close)   (int);
+  extern int    (*soc_listen)  (int, int);
+  extern int    (*soc_socket)  (int, int, int);
+  extern ssize_t(*soc_recv)    (int, void*, size_t, int);
+  extern ssize_t(*soc_send)    (int, const void*, size_t, int);
+  extern int    (*soc_accept)  (int, struct sockaddr*, socklen_t*);
+  extern int    (*soc_connect) (int, const struct sockaddr*, socklen_t);
+  extern ssize_t(*soc_recvfrom)(int, void*, size_t, int, sockaddr*, socklen_t*);
+  extern ssize_t(*soc_sendto)  (int, const void*, size_t, int, const sockaddr*, socklen_t);
 
-  class socket {
+  class sync_socket {
     public:
 
       /* constructors */
-      socket();
-      socket(const int& fd, sockaddr* src, socklen_t len);
-      socket(const string& host, const string& port, bool tcp = true);
-      socket(const socket& cpy);
+      sync_socket();
+      sync_socket(const int& fd);
+      sync_socket(const int& fd, sockaddr* src, socklen_t len);
+      sync_socket(const string& host, const string& port, bool tcp = true);
+      sync_socket(const sync_socket& cpy);
 
       /* destructors */
-      virtual ~socket();
+      virtual ~sync_socket();
 
       /* assignment operators */
-      const socket& operator=(const socket& asn);
+      const sync_socket& operator=(const sync_socket& asn);
 
       /* functionality */
       void connect(const string& host, const string& port, bool tcp = true);
@@ -83,7 +84,7 @@ namespace net {
    * @return
    */
   template<typename _t>
-  int net::socket::send(const _t* buf, const size_t len, int flags) const {
+  int net::sync_socket::send(const _t* buf, const size_t len, int flags) const {
     if(_tcp)
       return soc_send(_fd, buf, len, flags);
     return soc_sendto(_fd, buf, len, flags, _src, _len);
@@ -98,7 +99,7 @@ namespace net {
    * @return
    */
   template<typename _t>
-  int net::socket::recv(_t* buf, const size_t len, int flags) const {
+  int net::sync_socket::recv(_t* buf, const size_t len, int flags) const {
     socklen_t cpy = _len;
 
     if(_tcp)

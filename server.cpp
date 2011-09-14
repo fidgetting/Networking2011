@@ -16,10 +16,11 @@
 
 //TODO
 void usage(const string& exe) {
+  std::cout << "usage: " << exe << " -t <tcp|udp> -p <port #>" << std::endl;
   exit(-1);
 }
 
-bool receive(net::socket& soc) {
+bool receive(net::sync_socket& soc) {
   message msg;
   reply rp;
 
@@ -33,10 +34,10 @@ int main(int argc, char** argv) {
   bool tcp = false;
   bool t, p;
   t = p = false;
-  int port;
+  int port, c;
   net::sync_service svc;
 
-  while((c = getopt(argc, argv, "t:p:")) != 0) {
+  while((c = getopt(argc, argv, "t:p:")) > 0) {
     switch(c) {
       case 't':
         t = true;
@@ -56,12 +57,12 @@ int main(int argc, char** argv) {
         }
         break;
       default:
+        std::cout << c << std::endl;
         usage(argv[0]);
         break;
     }
   }
 
-  //main accept() loop
   svc.add_port(port,tcp);
   svc.listen(receive);
 

@@ -16,7 +16,7 @@
  * TODO
  */
 net::_service::_service() :
-ports_master(), ports_max(0), ports(), read_s(1024) {
+    ports_master(), ports_max(0), ports(), udp_socs(), read_s(1024) {
   FD_ZERO(&ports_master);
 }
 
@@ -31,6 +31,13 @@ net::_service::~_service() {
   }
 }
 
+/**
+ * TODO
+ *
+ * @param port
+ * @param tcp
+ * @return
+ */
 bool net::_service::add_port(port_t port, bool tcp) {
   std::ostringstream ostr;
   struct addrinfo hints;
@@ -48,7 +55,7 @@ bool net::_service::add_port(port_t port, bool tcp) {
     return false;
 
   for(curr = result; curr != NULL; curr = curr->ai_next) {
-    fd = create_soc(curr->ai_family, curr->ai_socktype, curr->ai_protocol);
+    fd = soc_socket(curr->ai_family, curr->ai_socktype, curr->ai_protocol);
 
     if(fd == -1)
       continue;
@@ -68,7 +75,6 @@ bool net::_service::add_port(port_t port, bool tcp) {
 
   FD_SET(fd, &ports_master);
   ports[port] = fd;
-  types[port] = tcp;
   ports_max = std::max(fd, ports_max);
 
   soc_listen(fd, PENDING);
@@ -76,6 +82,12 @@ bool net::_service::add_port(port_t port, bool tcp) {
   return true;
 }
 
+/**
+ * TODO
+ *
+ * @param tcp
+ * @return
+ */
 net::port_t net::_service::add_any_port(bool tcp) {
   struct addrinfo hints;
   struct addrinfo* result, * curr;
@@ -91,12 +103,14 @@ net::port_t net::_service::add_any_port(bool tcp) {
     return 0;
 
   for(curr = result; curr != NULL; curr = curr->ai_next) {
-    fd = create_soc(curr->ai_family, curr->ai_socktype, curr->ai_protocol);
+    fd = soc_socket(curr->ai_family, curr->ai_socktype, curr->ai_protocol);
 
-    if(fd == -1)
+    if(fd == -1) {
+      // TODO
       continue;
+    }
 
-    if(bind(fd, curr->ai_addr, curr->ai_addrlen) == 0)
+    if(tcp && bind(fd, curr->ai_addr, curr->ai_addrlen) == 0)
       break;
 
     soc_close(fd);
@@ -108,19 +122,28 @@ net::port_t net::_service::add_any_port(bool tcp) {
   port = ((struct sockaddr_in*)curr->ai_addr)->sin_port;
   FD_SET(fd, &ports_master);
   ports[port] = fd;
-  types[port] = tcp;
   ports_max = std::max(fd, ports_max);
+
+  if(!tcp) {
+    udp_socs[fd] = net::sync_socket(fd, curr->ai_addr, curr->ai_addrlen);
+  }
 
   soc_listen(fd, PENDING);
 
   return port;
 }
 
+/**
+ * TODO
+ */
 net::sync_service::sync_service() :
-master(), master_max(0), socs() {
+master(), master_max(0), tcp_socs(), closing(false) {
   FD_ZERO(&master);
 }
 
+/**
+ * TODO
+ */
 void net::sync_service::close() {
   closing = true;
 }

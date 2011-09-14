@@ -23,14 +23,13 @@ namespace net {
 
   typedef unsigned short port_t;
 
-  int(*soc_listen)(int, int)                          = listen;
-  int(*soc_accept)(int, struct sockaddr*, socklen_t*) = accept;
-
+  /**
+   * TODO
+   */
   class _service {
     public:
 
       typedef std::map<port_t, int>  port_map_t;
-      typedef std::map<port_t, bool> type_map_t;
       typedef port_map_t::iterator                iterator;
       typedef port_map_t::const_iterator          const_iterator;
       typedef port_map_t::reverse_iterator        reverse_iterator;
@@ -56,13 +55,16 @@ namespace net {
 
     protected:
 
-      fd_set       ports_master;
-      int          ports_max;
-      port_map_t   ports;
-      type_map_t   types;
-      unsigned int read_s;
+      fd_set                ports_master;
+      int                   ports_max;
+      port_map_t            ports;
+      std::map<int, sync_socket> udp_socs;
+      unsigned int          read_s;
   };
 
+  /**
+   * TODO
+   */
   class sync_service : public _service {
     public:
 
@@ -76,12 +78,18 @@ namespace net {
 
     private:
 
-      fd_set              master;
-      int                 master_max;
-      std::vector<socket> socs;
-      bool                closing;
+      fd_set                     master;
+      int                        master_max;
+      std::vector<sync_socket>   tcp_socs;
+      bool                       closing;
   };
 
+  /**
+   * TODO
+   *
+   * @param callback
+   * @param args
+   */
   template<typename _t, typename... args_t>
   void sync_service::listen(_t& callback, args_t... args) {
     fd_set use;
@@ -89,6 +97,7 @@ namespace net {
     socklen_t addr_size;
     int fd;
 
+    std::cout << "listening" << std::endl;
     memcpy(&master, &ports_master, sizeof(fd_set));
     master_max = ports_max;
     addr_size = sizeof(addr);
@@ -99,23 +108,27 @@ namespace net {
       memcpy(&use, &master, sizeof(fd_set));
 
       if(select(master_max, &use, NULL, NULL, NULL) < 0)
-        { /* throw exception */ }
+      { /* throw exception */ }
 
       for(iterator iter = begin(); iter != end(); iter++) {
         if(FD_ISSET(iter->second, &use)) {
-          fd = soc_accept(iter->second, (sockaddr*)&addr, &addr_size);
+          fd = iter->second;
+          if(udp_socs.find(fd) == udp_socs.end()) {
+            fd = soc_accept(fd, (sockaddr*)&addr, &addr_size);
 
-          FD_SET(fd, &master);
-          master_max = std::max(fd, master_max);
-          socs.push_back(fd);
+            FD_SET(fd, &master);
+            master_max = std::max(fd, master_max);
+            tcp_socs.push_back(net::sync_socket(fd));
+          } else if(!callback(udp_socs[fd], args...))
+            FD_CLR(fd, &master);
         }
       }
+    }
 
-      for(auto iter = socs.begin(); iter != socs.end(); iter++) {
-        if(FD_ISSET(iter->fd(), &use)) {
-          if(!callback(*iter, args...)) {
-            FD_CLEAR(&master, iter->fd());
-          }
+    for(auto iter = tcp_socs.begin(); iter != tcp_socs.end(); iter++) {
+      if(FD_ISSET(iter->fd(), &use)) {
+        if(!callback(*iter, args...)) {
+          FD_CLR(iter->fd(), &master);
         }
       }
     }
