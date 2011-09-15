@@ -2,7 +2,7 @@
  * server.hpp
  *
  *  Created on: Aug 29, 2011
- *      Author: norton
+ *      Author: mallal, norton, savage, sorenson
  */
 
 #ifndef SERVER_HPP_INCLUDE
@@ -107,6 +107,7 @@ namespace net {
         net::sync_socket soc(fd);
 
         tcp_call(soc);
+        soc_close(fd);
       } else {
         udp_call(fd_blar);
       }

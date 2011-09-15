@@ -2,7 +2,7 @@
  * client.cpp
  *
  *  Created on: Aug 28, 2011
- *      Author: norton
+ *      Author: mallal, norton, savage, sorenson
  */
 
 #include <socket.hpp>
@@ -23,7 +23,8 @@ void timeout(int sig) {
 }
 
 void usage(const string& exe) {
-  std::cout << "usage: " << exe << std::endl;
+  std::cout << "usage: " << exe << " -t <tcp | udp> -s <server> -p <port> -x <num>" << std::endl;
+  std::cout << "usage: all options are required" << std::endl;
   exit(-1);
 }
 
@@ -77,14 +78,22 @@ int main(int argc, char** argv) {
     }
   }
 
+  if(!x || !s || !p || !t) {
+    usage(argv[0]);
+  }
+
   net::sync_socket conn(server, port, tcp);
-  message m(num);
+  message m(htonl(num));
   reply r;
 
-  conn.send(&m, sizeof(m));
+  if(conn.send<message>(&m, sizeof(m)) != sizeof(m)) {
+    perror("proj1_client: error of send() call");
+    return -1;
+  }
+
   alarm(3);
 
-  if(conn.recv(&r, sizeof(r)) <= 0) {
+  if(conn.recv<reply>(&r, sizeof(r)) <= 0) {
     std::cerr << "proj1_client: error on recv() call" << std::endl;
     return -1;
   }

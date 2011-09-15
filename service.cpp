@@ -2,7 +2,7 @@
  * server.cpp
  *
  *  Created on: Aug 29, 2011
- *      Author: norton
+ *      Author: mallal, norton, savage, sorenson
  */
 
 #define PENDING 16

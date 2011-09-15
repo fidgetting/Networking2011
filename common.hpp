@@ -2,7 +2,7 @@
  * common.hpp
  *
  *  Created on: Aug 28, 2011
- *      Author: norton
+ *      Author: mallal, norton, savage, sorenson
  */
 
 #ifndef COMMON_HPP_INCLUDE

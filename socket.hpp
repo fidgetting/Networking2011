@@ -2,7 +2,7 @@
  * socket.hpp
  *
  *  Created on: Aug 25, 2011
- *      Author: norton
+ *      Author: mallal, norton, savage, sorenson
  */
 
 #ifndef SOCKET_HPP_INCLUDE

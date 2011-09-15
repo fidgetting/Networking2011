@@ -17,7 +17,8 @@
 
 //TODO
 void usage(const string& exe) {
-  std::cout << "usage: " << exe << " -t <tcp|udp> -p <port #>" << std::endl;
+  std::cout << "usage: " << exe << " -t <tcp | udp> -p <port>" << std::endl;
+  std::cout << "usage: all options are required" << std::endl;
   exit(-1);
 }
 
@@ -26,6 +27,7 @@ bool receive_tcp(net::sync_socket& soc) {
   reply rp;
 
   soc.recv(&msg, sizeof(msg));
+  msg.num = ntohl(msg.num);
   std::cout << msg.num << std::endl;
   soc.send(&rp, sizeof(rp));
   return false;
@@ -38,6 +40,7 @@ bool receive_udp(int fd) {
   socklen_t addr_len;
 
   recvfrom(fd, &msg, sizeof(msg), 0, &addr, &addr_len);
+  msg.num = ntohl(msg.num);
   std::cout << msg.num << std::endl;
   sendto(fd, &rp, sizeof(rp), 0, &addr, addr_len);
 
@@ -77,6 +80,10 @@ int main(int argc, char** argv) {
         usage(argv[0]);
         break;
     }
+  }
+
+  if(!p || !t) {
+    usage(argv[0]);
   }
 
   svc.add_port(port,tcp);

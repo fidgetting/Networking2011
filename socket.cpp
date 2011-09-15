@@ -2,7 +2,7 @@
  * socket.cpp
  *
  *  Created on: Aug 25, 2011
- *      Author: norton
+ *      Author: mallal, norton, savage, sorenson
  */
 
 /* stdlibrary includes */
@@ -187,7 +187,6 @@ void net::sync_socket::connect(const string& host, const string& port, bool tcp)
   if(!tcp) {
     _src = (sockaddr*)calloc(1, curr->ai_addrlen);
     _len = curr->ai_addrlen;
-    memset(_src,  0, _len);
     memcpy(_src, curr->ai_addr, _len);
   }
 
