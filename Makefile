@@ -1,7 +1,7 @@
 
 
 CXX = g++
-CFLAGS = -O3 -Wall -std=c++0x
+CFLAGS = -O3 -Wall -std=c++0x -g
 INCPATH = -I.
 DEF = 
 EXE = proj1_client proj1_server

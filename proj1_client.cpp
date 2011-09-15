@@ -8,6 +8,7 @@
 #include <socket.hpp>
 #include <common.hpp>
 
+#include <signal.h>
 #include <iostream>
 #include <limits>
 #include <cstring>
@@ -16,6 +17,10 @@
 #include <getopt.h>
 #include <cstdlib>
 
+void timeout(int sig) {
+  std::cerr << "Timeout on reply from server" << std::endl;
+  exit(-1);
+}
 
 void usage(const string& exe) {
   std::cout << "usage: " << exe << std::endl;
@@ -32,10 +37,13 @@ int main(int argc, char** argv) {
   int c;
   x = s = p = t = false;
 
+  signal(SIGALRM, timeout);
+
   while((c = getopt(argc, argv, "x:t:s:p:")) > 0) {
     switch(c) {
       case 'x':
-        istr.str() = optarg;
+        istr.clear();
+        istr.str(optarg);
         istr >> num;
         x = true;
         break;
@@ -69,13 +77,17 @@ int main(int argc, char** argv) {
     }
   }
 
-  std::cout << server << " " << port << " " << tcp << std::endl;
   net::sync_socket conn(server, port, tcp);
   message m(num);
   reply r;
 
   conn.send(&m, sizeof(m));
-  conn.recv(&r, sizeof(r));
+  alarm(3);
+
+  if(conn.recv(&r, sizeof(r)) <= 0) {
+    std::cerr << "proj1_client: error on recv() call" << std::endl;
+    return -1;
+  }
 
   return 0;
 }

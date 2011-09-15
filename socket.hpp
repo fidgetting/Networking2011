@@ -100,11 +100,12 @@ namespace net {
    */
   template<typename _t>
   int net::sync_socket::recv(_t* buf, const size_t len, int flags) const {
-    socklen_t cpy = _len;
+    sockaddr blar;
+    socklen_t foo;
 
     if(_tcp)
       return soc_recv  (_fd, buf, len, flags);
-    return soc_recvfrom(_fd, buf, len, flags, _src, &cpy);
+    return soc_recvfrom(_fd, buf, len, flags, &blar, &foo);
   }
 }
 

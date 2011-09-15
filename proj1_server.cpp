@@ -8,6 +8,7 @@
 #include <service.hpp>
 #include <common.hpp>
 
+#include <signal.h>
 #include <getopt.h>
 #include <cstring>
 #include <iostream>
@@ -20,13 +21,26 @@ void usage(const string& exe) {
   exit(-1);
 }
 
-bool receive(net::sync_socket& soc) {
+bool receive_tcp(net::sync_socket& soc) {
   message msg;
   reply rp;
 
   soc.recv(&msg, sizeof(msg));
   std::cout << msg.num << std::endl;
   soc.send(&rp, sizeof(rp));
+  return false;
+}
+
+bool receive_udp(int fd) {
+  message msg;
+  reply rp;
+  struct sockaddr addr;
+  socklen_t addr_len;
+
+  recvfrom(fd, &msg, sizeof(msg), 0, &addr, &addr_len);
+  std::cout << msg.num << std::endl;
+  sendto(fd, &rp, sizeof(rp), 0, &addr, addr_len);
+
   return false;
 }
 
@@ -55,7 +69,7 @@ int main(int argc, char** argv) {
         p = true;
         port = std::atoi(optarg);
         if(port < 0 || port > std::numeric_limits<unsigned short>::max()) {
-          //TODO error
+          throw std::exception();
         }
         break;
       default:
@@ -66,7 +80,7 @@ int main(int argc, char** argv) {
   }
 
   svc.add_port(port,tcp);
-  svc.listen(receive);
+  svc.listen(receive_tcp, receive_udp);
 
   return 0;
 }

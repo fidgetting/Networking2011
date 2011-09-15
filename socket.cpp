@@ -177,6 +177,8 @@ void net::sync_socket::connect(const string& host, const string& port, bool tcp)
       perror("net::socket::connect :: connect() call failed");
       continue;
     }
+
+    break;
   }
 
   if(curr == NULL)

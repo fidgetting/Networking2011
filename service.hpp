@@ -38,7 +38,7 @@ namespace net {
       _service();
       virtual ~_service();
 
-      virtual bool   add_port(port_t port, bool tcp = true);
+      virtual void   add_port(port_t port, bool tcp = true);
       virtual port_t add_any_port(bool tcp = true);
 
       inline iterator               begin()        { return ports.begin();  }
@@ -60,6 +60,8 @@ namespace net {
       port_map_t            ports;
       std::map<int, sync_socket> udp_socs;
       unsigned int          read_s;
+      int  fd_blar;
+      bool tcp;
   };
 
   /**
@@ -71,8 +73,8 @@ namespace net {
       sync_service();
       virtual ~sync_service() { }
 
-      template<typename _t, typename... args_t>
-      void listen(_t& callback, args_t... args);
+      template<typename _t1, typename _t2>
+      void listen(_t1& tcp_call, _t2& udp_call);
 
       void close();
 
@@ -90,46 +92,23 @@ namespace net {
    * @param callback
    * @param args
    */
-  template<typename _t, typename... args_t>
-  void sync_service::listen(_t& callback, args_t... args) {
-    fd_set use;
+  template<typename _t1, typename _t2>
+  void sync_service::listen(_t1& tcp_call, _t2& udp_call) {
     sockaddr_storage addr;
     socklen_t addr_size;
     int fd;
 
-    std::cout << "listening" << std::endl;
     memcpy(&master, &ports_master, sizeof(fd_set));
     master_max = ports_max;
-    addr_size = sizeof(addr);
 
     while(!closing) {
-      FD_ZERO(&use);
+      if(tcp) {
+        fd = soc_accept(fd_blar, (sockaddr*)&addr, &addr_size);
+        net::sync_socket soc(fd);
 
-      memcpy(&use, &master, sizeof(fd_set));
-
-      if(select(master_max, &use, NULL, NULL, NULL) < 0)
-      { /* throw exception */ }
-
-      for(iterator iter = begin(); iter != end(); iter++) {
-        if(FD_ISSET(iter->second, &use)) {
-          fd = iter->second;
-          if(udp_socs.find(fd) == udp_socs.end()) {
-            fd = soc_accept(fd, (sockaddr*)&addr, &addr_size);
-
-            FD_SET(fd, &master);
-            master_max = std::max(fd, master_max);
-            tcp_socs.push_back(net::sync_socket(fd));
-          } else if(!callback(udp_socs[fd], args...))
-            FD_CLR(fd, &master);
-        }
-      }
-    }
-
-    for(auto iter = tcp_socs.begin(); iter != tcp_socs.end(); iter++) {
-      if(FD_ISSET(iter->fd(), &use)) {
-        if(!callback(*iter, args...)) {
-          FD_CLR(iter->fd(), &master);
-        }
+        tcp_call(soc);
+      } else {
+        udp_call(fd_blar);
       }
     }
   }
