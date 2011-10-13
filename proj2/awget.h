@@ -12,9 +12,7 @@
 #define AWGET_H_INCLUDE
 
 #include <stdio.h>
-
-typedef unsigned char uint8_t;
-typedef unsigned long uint32_t;
+#include <stdint.h>
 
 #pragma pack(1)
 typedef struct {

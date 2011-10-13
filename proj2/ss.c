@@ -13,6 +13,7 @@
 
 /* c std library includes */
 #include <errno.h>
+#include <getopt.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,20 +26,24 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#define BACKLOG  16
 #define BUF_SIZE 8192
 
-#define dump_one(fd, format, ...)       \
-  sprintf(buffer, format, __VA_ARGS__); \
-  perror(buffer);                       \
-  close(fd);                            \
-  pthread_exit(-1)
+#define dump_one(fd, ...)         \
+		sprintf(buffer, __VA_ARGS__); \
+		perror(buffer);               \
+		close(fd);                    \
+		pthread_exit(NULL)
 
-#define dump_two(fd1, fd2, format, ...) \
-  sprintf(buffer, format, __VA_ARGS__); \
-  perror(buffer);                       \
-  close(fd1);                           \
-  close(fd2);                           \
-  pthread_exit(-1)
+#define dump_two(fd1, fd2, ...)   \
+		sprintf(buffer, __VA_ARGS__); \
+		perror(buffer);               \
+		close(fd1);                   \
+		close(fd2);                   \
+		pthread_exit(NULL)
+
+char m_host[1024];
+char m_port[1024];
 
 /* ************************************************************************** */
 /* *** connection function ************************************************** */
@@ -81,9 +86,8 @@ int next_ss(char* host, char* port) {
   }
 
   if(curr == NULL) {
-    perror("ERROR: next_ss: unable to connect to next ss") {
-      return -1;
-    }
+    perror("ERROR: next_ss: unable to connect to next ss");
+    return -1;
   }
 
   freeaddrinfo(servs);
@@ -118,7 +122,8 @@ void curr_ss(int s, list_header list_h) {
 
   /* start printout */
   memset(buffer, '\0', sizeof(buffer));
-  sprintf(buffer, " Request: %s\n chainlist is\n", list_h.f_name);
+  sprintf(buffer, "ss <%s, %s>:\n Request: %s\n chainlist is\n",
+      m_host, m_port, list_h.f_name);
 
   /* receive the chain list */
   for(i = 0; i < list_h.l_size; i++) {
@@ -134,7 +139,7 @@ void curr_ss(int s, list_header list_h) {
   sprintf(buffer + strlen(buffer), " next SS is <%s, %s>\n", list[next].host, list[next].port);
   if((fd = next_ss(list[next].host, list[next].port)) == -1) {
     close(s);
-    pthread_exit(-1);
+    pthread_exit(NULL);
   }
 
   /* print the logging messages */
@@ -192,8 +197,15 @@ void curr_ss(int s, list_header list_h) {
  * @param args the socket that this connection should handle.
  */
 void* connection(void* args) {
-  int s = (int)args;
+  int s;
+  char buffer[256];
   list_header list_h;
+
+#if __x86_64__ | __amd64__
+  s = (long)args;
+#else
+  s = (int)args;
+#endif
 
   if(recv(s, (void*)&list_h, sizeof(list_header), 0) == -1) {
     dump_one(s, "ERROR: connection: failed to receive initial header");
@@ -210,17 +222,117 @@ void* connection(void* args) {
   return NULL;
 }
 
+/**
+ *
+ *
+ * @return
+ */
+int server(char* port) {
+  int sockfd;
+  struct addrinfo hints;
+  struct addrinfo* serv, * curr;
+  struct sockaddr_storage their_addr;
+  socklen_t their_size;
+  pthread_t thread;
+  int yes = 1;
+
+#if __x86_64__ | __amd64__
+  long fd;
+#else
+  int fd;
+#endif
+
+  serv = NULL;
+  curr = NULL;
+
+  /* initialize hints */
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family   = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_flags    = AI_PASSIVE;
+
+  /* get possible ports to listen on */
+  if((fd = getaddrinfo(NULL, port, &hints, &serv)) != 0) {
+    fprintf(stderr, "ERROR: server: getaddrinfo call failed: %s\n",
+        gai_strerror(fd));
+    return -1;
+  }
+
+  /* loop over options and break when a socket is created */
+  for(curr = serv; curr != NULL; curr = curr->ai_next) {
+    sockfd = socket(curr->ai_family, curr->ai_socktype, curr->ai_protocol);
+    if(sockfd == -1) {
+      perror("ERROR: server: socket call failed");
+      continue;
+    }
+
+    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+      perror("ERROR: server: setsockopt call failed");
+      return -1;
+    }
+
+    if(bind(sockfd, curr->ai_addr, curr->ai_addrlen) == 0)
+      break;
+
+    perror("ERROR: server: bind call failed");
+    close(sockfd);
+  }
+
+  /* make sure we have a socket */
+  if(curr == NULL) {
+    fprintf(stderr, "ERROR: server: unable to create listen socket\n");
+    return -1;
+  }
+  freeaddrinfo(serv);
+
+  /* perform book keeping */
+  if((fd = getnameinfo(curr->ai_addr, curr->ai_addrlen,
+      m_host, sizeof(m_host), m_port, sizeof(m_port), 0)) != 0) {
+    fprintf(stderr, "ERROR: server: getnameinfo call failed: %s\n",
+        gai_strerror(fd));
+    return -1;
+  }
+  printf("ss <%s, %s>\n", m_host, m_port);
+
+  if(listen(sockfd, BACKLOG) == -1) {
+    perror("ERROR: server: listen call failed");
+    return -1;
+  }
+
+  /* accept loop */
+  for(;;) {
+    their_size = sizeof(their_addr);
+    fd = accept(sockfd, (struct sockaddr*)&their_addr, &their_size);
+    if(fd == -1) {
+      perror("ERROR: server: accept call failed");
+      continue;
+    }
+
+    pthread_create(&thread, NULL, connection, (void*)fd);
+    pthread_detach(thread);
+  }
+
+  return 0;
+}
+
 /* ************************************************************************** */
 /* *** main function ******************************************************** */
 /* ************************************************************************** */
 
 int main(int argc, char** argv) {
+  int c;
+  char* port = "5555";
 
   /* general setup */
   srand(time(NULL));
 
+  if((c = getopt(argc, argv, "p:"))) {
+    switch(c) {
+      case 'p': port = optarg; break;
+      default: /* TODO usage */ break;
+    }
+  }
 
-
-
+  return server(port);
 }
 
