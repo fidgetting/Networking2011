@@ -1,10 +1,13 @@
-CC=gcc
-CFLAGS=-Wall -lpthread -I . 
 
-all: ss.o
+CC     = gcc
+CFLAGS = -Wall -lpthread -I. -g
+EXE    = ss awget
 
-ss.o: ss.c
-	$(CC) $(CFLAGS) ss.c -o ss.out
+HEAD   = awget.h
+
+all: $(EXE)
+$(EXE): %: %.c $(HEAD)
+	$(CC) $(CFLAGS) $< -o $@
 
 clean:
-	rm -rf *.out
+	rm -rf $(EXE)
