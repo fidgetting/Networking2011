@@ -100,11 +100,14 @@ int next_ss(char* host, char* port) {
 }
 
 /**
- * TODO
+ * This is called if there are not more stepping stones in the list. This will
+ * call a wget, then mmap the file and send it across the network. Once sent
+ * this will unmap the file and delete it from the file system.
  *
- * @param s
+ * @param s the socket to send the file across
+ * @param fname the name of the file to call wget on
  */
-void last_ss(int s, list_header* list_h) {
+void last_ss(int s, char* fname) {
   int fd, bytes;
   file_header file_f;
   char*       f_data;
@@ -114,7 +117,7 @@ void last_ss(int s, list_header* list_h) {
   char buffer[256];
 
   snprintf(buffer, sizeof(buffer),
-      "wget %s --output-document=file_%d.tmp --quiet", list_h->f_name, s);
+      "wget %s --output-document=file_%d.tmp --quiet", fname, s);
 
   system(buffer);
 
@@ -153,10 +156,13 @@ void last_ss(int s, list_header* list_h) {
     perror("ERROR: last_ss: couldn't close file");
   if(munmap(f_data, sb.st_size) == -1)
     perror("ERROR: last_ss: couldn't remove file from memory");
+  if(remove(buffer) == -1)
+    perror("ERROR: last_ss: couldn't remove file from filesystem");
 }
 
 /**
- * TODO
+ * This is called if this stepping stone is not the last stepping stone in the
+ * list.
  *
  * @param s
  * @param list_h
@@ -262,7 +268,7 @@ void* connection(void* args) {
   list_h.l_size = ntohl(list_h.l_size);
 
   if(list_h.l_size == 0) {
-    last_ss(s, &list_h);
+    last_ss(s, list_h.f_name);
   } else {
     curr_ss(s, list_h);
   }
