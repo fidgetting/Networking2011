@@ -14,24 +14,25 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#pragma pack(1)
-typedef struct {
+typedef struct list_header_s  list_header;
+typedef struct list_element_s list_element;
+typedef struct file_header_s  file_header;
+
+struct list_header_s {
     uint8_t  version;
     uint32_t l_size;
     char     f_name[FILENAME_MAX];
-} list_header;
+} __attribute__((__packed__));
 
-#pragma pack(1)
-typedef struct {
+struct list_element_s {
     uint8_t version;
     char host[256];
     char port[8];
-} list_element;
+} __attribute__((__packed__));
 
-#pragma pack(1)
-typedef struct {
+struct file_header_s {
     uint8_t  version;
     uint32_t f_size;
-} file_header;
+} __attribute__((__packed__));
 
 #endif /* AWGET_H_INCLUDE */

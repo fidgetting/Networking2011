@@ -1,6 +1,6 @@
 
 CC     = gcc
-CFLAGS = -Wall -lpthread -I. -g
+CFLAGS = -Wall -Werror -lpthread -I. -g
 EXE    = ss awget
 
 HEAD   = awget.h

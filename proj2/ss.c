@@ -22,12 +22,17 @@
 
 /* networking includes */
 #include <netdb.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #define BACKLOG  16
 #define BUF_SIZE 8192
+
+#define MIN(x, y) x < y ? x : y
 
 #define dump_one(fd, ...)         \
 		sprintf(buffer, __VA_ARGS__); \
@@ -99,12 +104,55 @@ int next_ss(char* host, char* port) {
  *
  * @param s
  */
-void last_ss(int s) {
+void last_ss(int s, list_header* list_h) {
+  int fd, bytes;
   file_header file_f;
-  char*       file;
-  char buffer[BUF_SIZE];
+  char*       f_data;
+  char*       f_end;
+  char*       cursor;
+  struct stat sb;
+  char buffer[256];
 
-  /* TODO */
+  snprintf(buffer, sizeof(buffer),
+      "wget %s --output-document=file_%d.tmp --quiet", list_h->f_name, s);
+
+  system(buffer);
+
+  snprintf(buffer, sizeof(buffer), "file_%d.tmp", s);
+  if((fd = open(buffer, O_RDONLY)) == -1) {
+    perror("ERROR: last_ss: couldn't open file after wget");
+    return;
+  }
+
+  if(fstat(fd, &sb) == -1) {
+    perror("ERROR: last_ss: couldn't fstat wget file");
+    return;
+  }
+
+  if((f_data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0)) == MAP_FAILED) {
+    perror("ERROR: last_ss: couldn't map file to memory");
+    return;
+  }
+
+  file_f.version = 1;
+  file_f.f_size = htonl((unsigned int)sb.st_size);
+  if(send(s, &file_f, sizeof(file_header), 0) == -1) {
+    perror("ERROR: last_ss: failed to send file header");
+    return;
+  }
+
+  f_end = f_data + sb.st_size;
+  for(cursor = f_data; cursor < f_end; cursor += bytes) {
+    if((bytes = send(s, cursor, MIN(BUF_SIZE, f_end - cursor), 0)) == -1) {
+      perror("ERROR: last_ss: failed to send file");
+      return;
+    }
+  }
+
+  if(close(fd) == -1)
+    perror("ERROR: last_ss: couldn't close file");
+  if(munmap(f_data, sb.st_size) == -1)
+    perror("ERROR: last_ss: couldn't remove file from memory");
 }
 
 /**
@@ -170,11 +218,11 @@ void curr_ss(int s, list_header list_h) {
     memset(buffer, '\0', sizeof(buffer));
 
     if((bytes = recv(fd, (void*)buffer, sizeof(buffer), 0)) == -1) {
-      dump_two(s, fd, "ERROR: connection: unable to receive bytes %d -> %d", i, i + sizeof(buffer));
+      dump_two(s, fd, "ERROR: connection: unable to receive bytes %d -> %ld", i, i + sizeof(buffer));
     }
 
     if(send(s, buffer, bytes, 0) == -1) {
-      dump_two(s, fd, "ERROR: connection: unable to send %d bytes to previous ss", bytes);
+      dump_two(s, fd, "ERROR: connection: unable to send %ld bytes to previous ss", bytes);
     }
   }
 
@@ -211,8 +259,10 @@ void* connection(void* args) {
     dump_one(s, "ERROR: connection: failed to receive initial header");
   }
 
+  list_h.l_size = ntohl(list_h.l_size);
+
   if(list_h.l_size == 0) {
-    last_ss(s);
+    last_ss(s, &list_h);
   } else {
     curr_ss(s, list_h);
   }
@@ -228,7 +278,7 @@ void* connection(void* args) {
  * @return
  */
 int server(char* port) {
-  int sockfd;
+  int sockfd = -1;
   struct addrinfo hints;
   struct addrinfo* serv, * curr;
   struct sockaddr_storage their_addr;
@@ -246,10 +296,14 @@ int server(char* port) {
   curr = NULL;
 
   /* initialize hints */
-  memset(&hints, 0, sizeof(hints));
+  memset(&hints, 0, sizeof(struct addrinfo));
   hints.ai_family   = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags    = AI_PASSIVE;
+  hints.ai_protocol = 0;
+  hints.ai_canonname = NULL;
+  hints.ai_addr = NULL;
+  hints.ai_next = NULL;
 
   /* get possible ports to listen on */
   if((fd = getaddrinfo(NULL, port, &hints, &serv)) != 0) {
@@ -258,7 +312,6 @@ int server(char* port) {
     return -1;
   }
 
-  /* loop over options and break when a socket is created */
   for(curr = serv; curr != NULL; curr = curr->ai_next) {
     sockfd = socket(curr->ai_family, curr->ai_socktype, curr->ai_protocol);
     if(sockfd == -1) {
@@ -321,7 +374,7 @@ int server(char* port) {
 
 int main(int argc, char** argv) {
   int c;
-  char* port = "5555";
+  char* port = "24516";
 
   /* general setup */
   srand(time(NULL));
