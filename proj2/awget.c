@@ -25,6 +25,48 @@
 
 #define BUFFSIZE 8192
 
+
+int socketSetup(char* host, char* port) {
+  //setup the socket
+  int s;
+  struct addrinfo  hints;
+  struct addrinfo* servs, * next = NULL;
+
+  /* get server address information */
+  memset(&hints, 0, sizeof(struct addrinfo));
+  hints.ai_family   = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  if(getaddrinfo(host, port, &hints, &servs) == -1) {
+    perror("ERROR: main: getaddrinfo() failed for first SS");
+    return -1;
+  }
+
+  /* create the socket connection */
+  for(next = servs; next != NULL; next = next->ai_next) {
+    if((s = socket(next->ai_family, hints.ai_socktype, next->ai_protocol)) < 0) {
+      perror("ERROR: main: call to socket failed");
+      continue;
+    }
+
+    if(connect(s, next->ai_addr, next->ai_addrlen) == -1) {
+      perror("ERROR: main: call to connect failed");
+      continue;
+    }
+
+    break;
+  }
+
+  if(next == NULL) {
+    perror("ERROR: main: unable to connect to first ss");
+    return -1;
+  }
+
+  freeaddrinfo(servs);
+  return s;
+}
+
+
+
 //$awget <URL> [-c chainfile]
 int main(int argc, char** argv) {
   FILE *fp;
@@ -82,49 +124,8 @@ int main(int argc, char** argv) {
   //pick random element to send to and decrement the size of the list
   int r = rand() % header.l_size--;
 
-
-
-
-  //setup the socket
-  int s;
-  struct addrinfo  hints;
-  struct addrinfo* servs, * next = NULL;
-
-  /* get server address information */
-  memset(&hints, 0, sizeof(struct addrinfo));
-  hints.ai_family   = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
-  if(getaddrinfo(elements[r].host, elements[r].port, &hints, &servs) == -1) {
-    perror("ERROR: main: getaddrinfo() failed for first SS");
-    return -1;
-  }
-
-  /* create the socket connection */
-  for(next = servs; next != NULL; next = next->ai_next) {
-    if((s = socket(next->ai_family, hints.ai_socktype, next->ai_protocol)) < 0) {
-      perror("ERROR: main: call to socket failed");
-      continue;
-    }
-
-    if(connect(s, next->ai_addr, next->ai_addrlen) == -1) {
-      perror("ERROR: main: call to connect failed");
-      continue;
-    }
-
-    break;
-  }
-
-  if(next == NULL) {
-    perror("ERROR: main: unable to connect to first ss");
-    return -1;
-  }
-
-  freeaddrinfo(servs);
-
-
-
-
-
+  //setup socket
+  int s = socketSetup(elements[r].host, elements[r].port);
 
   //send the header
   if(send(s, &header, sizeof(list_header), 0) == -1) {
