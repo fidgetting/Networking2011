@@ -1,2 +1,4 @@
-1
-okra.cs.colostate.edu, 55256
+3
+parsnip.cs.colostate.edu, 24516
+tomato.cs.colostate.edu, 57681
+tomato.cs.colostate.edu, 24516

@@ -12,6 +12,7 @@
 #include <getopt.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 /* networking includes */
 #include <netdb.h>
 #include <fcntl.h>
@@ -38,7 +39,7 @@ int socketSetup(char* host, char* port) {
   hints.ai_socktype = SOCK_STREAM;
   if(getaddrinfo(host, port, &hints, &servs) == -1) {
     perror("ERROR: main: getaddrinfo() failed for first SS");
-    return -1;
+    exit(-1);
   }
 
   /* create the socket connection */
@@ -58,7 +59,7 @@ int socketSetup(char* host, char* port) {
 
   if(next == NULL) {
     perror("ERROR: main: unable to connect to first ss");
-    return -1;
+    exit(-1);
   }
 
   freeaddrinfo(servs);
@@ -73,7 +74,7 @@ int main(int argc, char** argv) {
   char* filename = "chaingang.txt";
   char* url = NULL;
   char* curr = NULL;
-  int c;
+  int c, bytes;
   char buff[BUFFSIZE];
   list_header header;
   list_element elements[BUFFSIZE];
@@ -114,6 +115,7 @@ int main(int argc, char** argv) {
       return -1;
     }
     curr = strrchr(buff, ' ') + 1;
+    curr[strlen(curr) - 1] = '\0';
     *strchr(buff, ',') = '\0';
 
     strncpy(elements[c].host, buff, sizeof(elements[c].host));
@@ -128,10 +130,12 @@ int main(int argc, char** argv) {
   int s = socketSetup(elements[r].host, elements[r].port);
 
   //send the header
-  if(send(s, &header, sizeof(list_header), 0) == -1) {
+  header.l_size = htonl(header.l_size);
+  if(send(s, &header, sizeof(list_header), 0) != sizeof(list_header)) {
     perror("ERROR: main: failed to send list header");
    return -1;
   }
+
   //send all other stepping stones except the one being sent to
   for(c = 0; c < hsize; c++) {
     if(r != c) {
@@ -147,34 +151,34 @@ int main(int argc, char** argv) {
   file_header recInfo;
 
   if(recv(s, &recInfo, sizeof(file_header), 0) == -1) {
-    perror("ERROR: main: failed to recieve file_header");
+    perror("ERROR: main: failed to receive file_header");
       return -1;
   }
   
-  FILE * recFile;
-  if(!(recFile = fopen("foo","w"))) {
-    perror("ERROR: main: error opening recieve file.");
+  recInfo.f_size = ntohl(recInfo.f_size);
+
+  FILE* recFile;
+  if((recFile = fopen("foo", "wb")) == NULL) {
+    perror("ERROR: main: error opening receive file.");
     return -1;
   }
   
-  int recieved = 0;
-  while(recieved != recInfo.f_size) {
-      int inBytes = 0;
-      memset(&buff, 0, sizeof(buff));
-      if((inBytes = recv(s, &buff, sizeof(BUFFSIZE), 0)) == -1) {
-        perror("ERROR: main: failed to recieve file");
-        return -1;
-      } else if (inBytes == 0){
-        perror("ERROR: main: connection closed unexpectedly");
-        return -1;
-      }
-      //print to the recFile
-      fprintf(recFile, "%s", buff);
-  }
+  for(c = 0; c < recInfo.f_size; c += bytes) {
+    memset(buff, '\0', sizeof(buff));
+    if((bytes = recv(s, buff, sizeof(buff), 0)) == -1) {
+      perror("ERROR: main: failed while receiving file");
+      return -1;
+    }
 
+    if(fwrite(buff, 1, bytes, recFile) == -1) {
+      perror("ERROR: main: failed while writing destination file");
+      return -1;
+    }
+  }
 
   close(s); 
   fclose(fp);
+  fclose(recFile);
   return 0;
 }
 

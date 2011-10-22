@@ -21,8 +21,9 @@
 #include <time.h>
 
 /* networking includes */
-#include <netdb.h>
+#include <arpa/inet.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -49,6 +50,17 @@
 
 char m_host[1024];
 char m_port[1024];
+
+// TODO get rid of this
+// get sockaddr, IPv4 or IPv6:
+void *get_in_addr(struct sockaddr *sa)
+{
+    if (sa->sa_family == AF_INET) {
+        return &(((struct sockaddr_in*)sa)->sin_addr);
+    }
+
+    return &(((struct sockaddr_in6*)sa)->sin6_addr);
+}
 
 /* ************************************************************************** */
 /* *** connection function ************************************************** */
@@ -203,10 +215,12 @@ void curr_ss(int s, list_header list_h) {
 
   /* send list to next stepping stone */
   list_h.l_size--;
-  if(send(fd, (void*)&list_h, sizeof(list_header), 0) == -1) {
+  list_h.l_size = htonl(list_h.l_size);
+  if(send(fd, &list_h, sizeof(list_header), 0) != sizeof(list_header)) {
     dump_two(s, fd, "ERROR: connection: unable to send list header to next ss");
   }
 
+  list_h.l_size = ntohl(list_h.l_size);
   for(i = 0; i < list_h.l_size + 1; i++) {
     if(i != next) {
       if(send(fd, (void*)&list[i], sizeof(list_element), 0) == -1) {
@@ -220,6 +234,11 @@ void curr_ss(int s, list_header list_h) {
     dump_two(s, fd, "ERROR: connection: unable to receive file information");
   }
 
+  if(send(s, &file, sizeof(file_header), 0) == -1) {
+    dump_two(s, fd, "ERROR: connection: unable to forward file header");
+  }
+
+  file.f_size = ntohl(file.f_size);
   for(i = 0; i < file.f_size; i += bytes) {
     memset(buffer, '\0', sizeof(buffer));
 
@@ -251,9 +270,11 @@ void curr_ss(int s, list_header list_h) {
  * @param args the socket that this connection should handle.
  */
 void* connection(void* args) {
+  int bytes, total;
   int s;
   char buffer[256];
   list_header list_h;
+  char* ptr = (char*)&list_h;
 
 #if __x86_64__ | __amd64__
   s = (long)args;
@@ -261,8 +282,10 @@ void* connection(void* args) {
   s = (int)args;
 #endif
 
-  if(recv(s, (void*)&list_h, sizeof(list_header), 0) == -1) {
-    dump_one(s, "ERROR: connection: failed to receive initial header");
+  for(total = 0; total < sizeof(list_header); total += bytes) {
+    if((bytes = recv(s, ptr + total, sizeof(list_header) - total, 0)) == -1) {
+      dump_one(s, "ERROR: connection: failed to receive initial header");
+    }
   }
 
   list_h.l_size = ntohl(list_h.l_size);
@@ -290,6 +313,7 @@ int server(char* port) {
   struct sockaddr_storage their_addr;
   socklen_t their_size;
   pthread_t thread;
+  char s[INET6_ADDRSTRLEN];
   int yes = 1;
 
 #if __x86_64__ | __amd64__
@@ -366,6 +390,11 @@ int server(char* port) {
       perror("ERROR: server: accept call failed");
       continue;
     }
+
+    inet_ntop(their_addr.ss_family,
+        get_in_addr((struct sockaddr *)&their_addr),
+        s, sizeof(s));
+    printf("server: got connection from %s\n", s);
 
     pthread_create(&thread, NULL, connection, (void*)fd);
     pthread_detach(thread);
