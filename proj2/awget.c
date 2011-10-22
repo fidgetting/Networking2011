@@ -26,6 +26,21 @@
 
 #define BUFFSIZE 8192
 
+/*
+
+//Request: www.cs.colostate.edu/...
+//chainlist is
+
+
+
+printf("%s", buffer);
+
+//Received file <filename>
+//Goodbuy
+printf(" Received file <filename>...\n Goodbuy\n");
+
+ */
+
 
 int socketSetup(char* host, char* port) {
   //setup the socket
@@ -137,7 +152,9 @@ int main(int argc, char** argv) {
   }
 
   //send all other stepping stones except the one being sent to
+  printf("awget\n Request: %s\n chainlist is\n", url);
   for(c = 0; c < hsize; c++) {
+    printf(" <%s, %s>\n", elements[c].host, elements[c].port);
     if(r != c) {
       if(send(s, &elements[c], sizeof(list_element), 0) == -1) {
         perror("ERROR: main: failed to send element");
@@ -145,6 +162,8 @@ int main(int argc, char** argv) {
       }
     }
   }
+  printf(" next SS is <%s, %s>\n", elements[r].host, elements[r].port);
+  printf(" waiting for file...\n");
 
   //receive file back and output
 
@@ -174,7 +193,12 @@ int main(int argc, char** argv) {
       perror("ERROR: main: failed while writing destination file");
       return -1;
     }
+
+    printf(".");
   }
+
+  printf("\n Received file foo\n");
+  printf(" Goodbuy!\n");
 
   close(s); 
   fclose(fp);

@@ -51,17 +51,6 @@
 char m_host[1024];
 char m_port[1024];
 
-// TODO get rid of this
-// get sockaddr, IPv4 or IPv6:
-void *get_in_addr(struct sockaddr *sa)
-{
-    if (sa->sa_family == AF_INET) {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
-    }
-
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
-
 /* ************************************************************************** */
 /* *** connection function ************************************************** */
 /* ************************************************************************** */
@@ -120,6 +109,16 @@ int next_ss(char* host, char* port) {
  * @param fname the name of the file to call wget on
  */
 void last_ss(int s, char* fname) {
+  /*
+  ss <SSaddr, SSport>:
+  Request: www.cs.colostate.edu/...
+  chainlist is empty
+  issueing wget for file <filename>
+..
+  File received
+  Relaying file ...
+  Goodbuy!
+  */
   int fd, bytes;
   file_header file_f;
   char*       f_data;
@@ -127,6 +126,11 @@ void last_ss(int s, char* fname) {
   char*       cursor;
   struct stat sb;
   char buffer[256];
+
+  printf("ss <%s, %s>:\n", m_host, m_port);
+  printf(" Request: %s\n", fname);
+  printf(" chainlist is empty\n");
+  printf(" issueing wget for file %s\n", fname);
 
   snprintf(buffer, sizeof(buffer),
       "wget %s --output-document=file_%d.tmp --quiet", fname, s);
@@ -162,7 +166,12 @@ void last_ss(int s, char* fname) {
       perror("ERROR: last_ss: failed to send file");
       return;
     }
+
+    printf(".");
   }
+
+  printf("\n File received\n");
+  printf(" Relaying file ...\n Goodbuy!\n");
 
   if(close(fd) == -1)
     perror("ERROR: last_ss: couldn't close file");
@@ -210,7 +219,7 @@ void curr_ss(int s, list_header list_h) {
 
   /* print the logging messages */
   sprintf(buffer + strlen(buffer),
-      " waiting for file...\n...\n");
+      " waiting for file...\n");
   printf("%s", buffer);
 
   /* send list to next stepping stone */
@@ -249,9 +258,11 @@ void curr_ss(int s, list_header list_h) {
     if(send(s, buffer, bytes, 0) == -1) {
       dump_two(s, fd, "ERROR: connection: unable to send %ld bytes to previous ss", bytes);
     }
+
+    printf(".");
   }
 
-  printf(" Relaying file...\n Goodbuy\n");
+  printf("\n Relaying file...\n Goodbuy!\n");
   close(fd);
 }
 
@@ -282,14 +293,13 @@ void* connection(void* args) {
   s = (int)args;
 #endif
 
-  for(total = 0; total < sizeof(list_header); total += bytes) {
-    if((bytes = recv(s, ptr + total, sizeof(list_header) - total, 0)) == -1) {
+  for(total = 0; total < sizeof(list_h); total += bytes) {
+    if((bytes = recv(s, ptr + total, sizeof(list_h) - total, 0)) == -1) {
       dump_one(s, "ERROR: connection: failed to receive initial header");
     }
   }
 
   list_h.l_size = ntohl(list_h.l_size);
-
   if(list_h.l_size == 0) {
     last_ss(s, list_h.f_name);
   } else {
@@ -313,7 +323,6 @@ int server(char* port) {
   struct sockaddr_storage their_addr;
   socklen_t their_size;
   pthread_t thread;
-  char s[INET6_ADDRSTRLEN];
   int yes = 1;
 
 #if __x86_64__ | __amd64__
@@ -390,11 +399,6 @@ int server(char* port) {
       perror("ERROR: server: accept call failed");
       continue;
     }
-
-    inet_ntop(their_addr.ss_family,
-        get_in_addr((struct sockaddr *)&their_addr),
-        s, sizeof(s));
-    printf("server: got connection from %s\n", s);
 
     pthread_create(&thread, NULL, connection, (void*)fd);
     pthread_detach(thread);

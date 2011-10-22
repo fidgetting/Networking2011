@@ -1,0 +1,29 @@
+Authors:
+  Alex Norton
+  Jef Mallal
+  Nick Savage
+  Josh Sorensen
+
+We could not determine an easy method for determining the name of
+the file that should be saved. As a result the filename is hard
+coded as "foo" and awget will always save the file under that name.
+
+the default port for ss is:
+  24516
+
+if the -p option is not provided to ss then it will use the
+defualt port.
+
+for the chaingang.txt input file, there are some restrictions:
+  1. there can't be any trailing whitespace between the host name
+     and the ','
+  2. there must be at least one space directly before the port
+  3. the newline must come directly after the port.
+  4. the '<' and '>' are not included in the input file.
+
+example of legal file:
+3
+onion.cs.colostate.edu, 24516
+pepper.cs.colostate.edu, 24516
+onion.cs.colostate.edu, 18468
+
