@@ -1,0 +1,65 @@
+#include <iostream>
+#include <string>
+#include <vector>
+#include <stdlib.h>
+#include <sstream>
+#include <string.h>
+using namespace std;
+
+class server{
+     public:
+    	string IP;
+    	string name;
+     	server(string server,string IP);
+	char* getName();
+        char* getIP();
+};
+
+server::server(string sServer,string sIP){
+	IP = sIP;
+        name = sServer;
+}
+
+char* server::getIP(){
+        char* toreturn;
+        strcpy(toreturn, IP.c_str());
+        return toreturn;
+}
+
+char* server::getName(){
+	char* toreturn;
+	strcpy(toreturn, name.c_str());
+	return toreturn;
+}
+
+vector<server> initialize(){
+	vector<server> vServers;
+	vServers.push_back(server("198.41.0.4","ns.internic.net"));
+	vServers.push_back(server("192.228.79.201","ns1.isi.edu"));
+	vServers.push_back(server("192.33.4.12","c.psi.net"));
+	vServers.push_back(server("128.8.10.90","terp.umd.edu"));
+	vServers.push_back(server("192.203.230.10","ns.nasa.gov"));
+	vServers.push_back(server("192.5.5.241","ns.isc.org"));
+	vServers.push_back(server("192.112.36.4","ns.nic.ddn.mil"));
+	vServers.push_back(server("128.63.2.53","aos.arl.army.mil"));
+	vServers.push_back(server("192.36.148.17","nic.nordu.net"));
+	vServers.push_back(server("192.58.128.30","Verisign"));
+	vServers.push_back(server("193.0.14.129","RIPE NCC"));
+	vServers.push_back(server("199.7.83.42","ICANN"));
+	vServers.push_back(server("202.12.27.33","WIDE Project"));
+	return vServers;
+}
+
+int usage(){
+	cout << "Usage: myresolver hostname\n";
+	exit(0);
+}
+
+main(int argc,char *argv[])
+{
+	vector<server> hostServers  = initialize();
+	if(argc != 2){
+		usage();
+	}
+	return 0;
+}
