@@ -19,6 +19,7 @@ const int debug = 1;
 
 
 #define BUF_SIZE 8192
+#define BIT(var ,shift) (var & (1 << shift))
 
 class server{
      private:
@@ -85,7 +86,7 @@ header makeHeader(){
 question makeQuestion(string name){
 	question q;
 	cout << name << endl;
-	for(unsigned int i= 0;i< name.size();i++){
+	for(int i= 0;i< name.size();i++){
               if(name[i] == '.'){
                       name[i] = ' ';
               }
@@ -115,65 +116,41 @@ void successParse(string response){
 
 }
 
-string sendOut(string IP, string sendMe, bool TCP){
+string sendOut(string IP, string sendMe){
 	struct addrinfo info, *reinfo;
 	memset(&info, 0, sizeof info);
 	info.ai_family = AF_INET;
-	if(TCP){
-		info.ai_socktype = SOCK_STREAM;
-	}
-	else info.ai_socktype = SOCK_DGRAM;
+	info.ai_socktype = SOCK_DGRAM;
 	getaddrinfo(IP.c_str(), "53", &info, &reinfo);
-	cout << "Things" << endl;
 	int sock = socket(reinfo->ai_family, reinfo->ai_socktype, reinfo->ai_protocol);
-	if(TCP){
 		connect(sock, reinfo->ai_addr, reinfo->ai_addrlen);
-		cout << "PORT:" << sock << endl;
 		int derp = sendMe.size();
-		int herp = send(sock, (void *)sendMe.c_str(),derp,0);
-		char rec[BUF_SIZE];
-		int numbyts = 0;
-		while(numbyts == 0){
-			cout <<"PORT: "<< sock << endl;
-			if((numbyts = recv(sock,rec,BUF_SIZE-1,0)) == -1){
-				cout << "FAILURE" << endl;
-			}
-			cout << numbyts << endl;
-		}
-//		cout << "WE WILL NOT FAIL" << endl;
-		cout << numbyts << endl;
-		stringstream mf;
-		mf.write(rec,numbyts);
-		cout << mf.str() << endl;
-		cout << mf.str().size() << endl;
-	}else{
-		connect(sock, reinfo->ai_addr, reinfo->ai_addrlen);
-		cout << "PORT:" << sock << endl;
-		int derp = sendMe.size();
-		int herp = send(sock, (void *)sendMe.c_str(),derp,0);
 		char head[BUF_SIZE];
-		char body[BUF_SIZE];
-		int hNumbyts = 0;
-		while(hNumbyts == 0){
-			if((hNumbyts = recv(sock,head,BUF_SIZE-1,0)) == -1){
-				cout << "FAILURE" << endl;
-			}
+                int hNumbyts = 0;
+		int herp = send(sock, (void *)sendMe.c_str(),derp,0);
+		if((hNumbyts = recv(sock,head,BUF_SIZE-1,0)) == -1){
+			cout << "FAILURE" << endl;			
 		}
-//		cout << "WE WILL NOT FAIL" << endl;
 		stringstream mf;
 		mf.write(head,hNumbyts);
-		cout << mf.str() << endl;
-		cout << mf.str().size() << endl;
-	}
-	return "";
+	return mf.str();
 }
 
 
 void parse(string response){
+	if(debug) cout << response << endl;
 	bool AA;
-	AA =(response[3] == (char)(132));
-	uint8_t RCODE;
-	
+	AA =BIT((response[2]),5);
+	if(AA){
+		if(debug) cout << "AA IS TRUE" << endl;
+	}
+	if(debug) cout <<"RCODE before AND: " << response[3] << endl;
+	uint8_t RCODE =response[3] & 15;
+	if(debug) cout <<"RCODE after AND: "<< RCODE << endl;
+	uint16_t ANCOUNT = response[7];
+	uint16_t NSCOUNT = response[9];
+	uint16_t ARCOUNT = response[11];
+	if(debug) cout << ANCOUNT << " " << NSCOUNT << " " << ARCOUNT << endl;	
 	switch (RCODE)
 	{
 	case 0:
@@ -214,7 +191,6 @@ void attempt(vector<server> & servers,header toSend,question toSend2){
 		if(debug) cout << "RANDOM NUMBER TEST: "<<rand()<< endl;
 		int srvNum = rand() % servers.size();
 		if(debug) cout << "sending to: " << servers[srvNum].getName() << endl;
-		net::sync_socket conn(servers[srvNum].getIP(),"53", false);
 		stringstream toSendAway;
 		uint16_t version = htons(toSend.version);
 		uint16_t flags = htons(toSend.flags);
@@ -235,20 +211,9 @@ void attempt(vector<server> & servers,header toSend,question toSend2){
 		toSendAway.write((char*)&stopper,1);
 		toSendAway.write((char*)&qtype,2);
 		toSendAway.write((char*)&qclass,2);
-		sendOut(servers[srvNum].getIP(),toSendAway.str(),false);
-		//if(conn.send<char>(toSendAway.str().c_str(), toSendAway.str().size())){
-		//	perror("myresolver: error sending message");
-		//}
-		char answer[BUF_SIZE];
-		memset(&answer, '\0', sizeof(answer));
+		string results = sendOut(servers[srvNum].getIP(),toSendAway.str());
+		parse(results);
 		alarm(3);
-		
-		if(debug) cout << "sent\ntrying to recieve" << endl;
-		  if(conn.recv<char>(answer, sizeof(answer)) <= 0) {
-		    std::cerr << "nothing recieved bitchez" << endl;
-  		}
-  		cout << answer << endl;
-
 		servers.erase(servers.begin()+srvNum);
 		if(servers.size() == 0){
 			cout<<"No Record avalible"<<endl;
