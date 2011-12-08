@@ -11,7 +11,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
-
+#include <inttypes.h>
+#include <stdio.h>
 
 using namespace std;
 
@@ -86,7 +87,7 @@ header makeHeader(){
 question makeQuestion(string name){
 	question q;
 	cout << name << endl;
-	for(int i= 0;i< name.size();i++){
+	for(unsigned int i= 0;i< name.size();i++){
               if(name[i] == '.'){
                       name[i] = ' ';
               }
@@ -100,7 +101,7 @@ question makeQuestion(string name){
 	while(ss >> j){
 		uint8_t numChar = j.size();
 		q.QNAME[index++] = numChar;
-		for(int k = 0;k<j.size();k++){
+		for(unsigned int k = 0;k<j.size();k++){
 			q.QNAME[index++] = j[k];
 			q.numBytes++;
 		}
@@ -112,35 +113,144 @@ question makeQuestion(string name){
 	return q;
 }
 
-void successParse(string response){
+//kore wa nan desu ka?
+void successParse(string response, uint16_t ANCOUNT){
 
 }
 
+
+//Sends the quiery and recieves the answer
 string sendOut(string IP, string sendMe){
+	//Set up the adderinfo struct
 	struct addrinfo info, *reinfo;
 	memset(&info, 0, sizeof info);
 	info.ai_family = AF_INET;
 	info.ai_socktype = SOCK_DGRAM;
+
+	//TODO pack own struct!
 	getaddrinfo(IP.c_str(), "53", &info, &reinfo);
+
+	//set up the socket and connect
+	//TODO error check here
 	int sock = socket(reinfo->ai_family, reinfo->ai_socktype, reinfo->ai_protocol);
-		connect(sock, reinfo->ai_addr, reinfo->ai_addrlen);
-		int derp = sendMe.size();
-		char head[BUF_SIZE];
-                int hNumbyts = 0;
-		int herp = send(sock, (void *)sendMe.c_str(),derp,0);
-		if((hNumbyts = recv(sock,head,BUF_SIZE-1,0)) == -1){
-			cout << "FAILURE" << endl;			
-		}
-		stringstream mf;
-		mf.write(head,hNumbyts);
-	return mf.str();
+	connect(sock, reinfo->ai_addr, reinfo->ai_addrlen);
+
+	int numSendBytes = sendMe.size();
+	char head[BUF_SIZE];
+        int numBytesRecv = 0;
+
+	if (send(sock, (void *)sendMe.c_str(),numSendBytes,0) < numSendBytes){
+		cerr << "Did not send the whole packet" << endl; 
+	}
+	if((numBytesRecv = recv(sock,head,BUF_SIZE-1,0)) == -1){
+		cout << "FAILURE" << endl;			
+	}
+	stringstream results;
+	results.write(head,numBytesRecv);
+	return results.str();
+}
+/*
+uint16_t atoi16(char val1,char val2){
+		cout << "val1 " << val1 << endl;
+		uint16_t value = val2 + (val1 << 8);
+		return value;
+}*/
+
+uint16_t atoi16(string records,int & location){
+	uint16_t value = records[location] + (records[location+1] << 8);
+	location += 2;
+	return ntohs(value);
 }
 
+uint16_t atoi32(string records,int & location){
+	uint32_t value = records[location] + (records[location+1] << 8)
+			+ (records[location+2] << 16)
+			+ (records[location+3] << 24);
+	location += 4;
+	return ntohl(value);
+}
 
-void parse(string response){
+string recParse(string & records, int & location, bool first=true ){
+	uint8_t numchars = records[location];
+	if(numchars == 0) return "";
+	stringstream ss;
+	if(BIT(records[location],6) && BIT(records[location],7)) {
+		//if(debug) cout << "COMPRESSION FOUND: "<< location << endl;
+		uint16_t ofst = atoi16(records, location)+1;
+		//knock off the first 11... of a compressed record
+		int offset = ofst & 63;
+		//if(debug) cout << "OFFSET IS: "<< offset <<endl;
+		return recParse(records, offset,first);
+	}
+	location++;
+	int start = location;
+	//cout << "NO COMPRESSION: " << location << " " << numchars << endl;
+	for(location; location < start+numchars; location++){
+		ss << records[location]; 
+		
+		//TODO something with ss;
+	}
+	if(first) return ss.str()+recParse(records,location,false);
+	else return "."+ss.str()+recParse(records,location,first);
+}
+
+string ParseIP(string records){
+	int numchars = records.size();
+	stringstream ss;
+	for(int i = 0; i < numchars;i++){
+		if(i || i == numchars -1) ss <<  ".";
+		uint8_t var = records[i];
+		int var2 = var;
+		ss << var2;
+	}
+	return ss.str();
+}
+vector<server> nextParse(string records,int location,uint16_t ANCOUNT, uint16_t NSCOUNT, uint16_t ARCOUNT){	
+	vector<server> newList;
+	for(int i = 0; i<ANCOUNT; i++){
+		if(debug) cout << recParse(records,location) << endl;
+		uint16_t TYPE = atoi16(records,location);
+		uint16_t CLASS = atoi16(records,location);
+	}
+	for(int i = 0; i<NSCOUNT; i++){
+		string NAME = recParse(records,location);
+		if(debug) cout << "NAME: "<< NAME << endl;
+		uint16_t TYPE = atoi16(records,location);
+		if(debug) cout << "TYPE: "<< TYPE << endl;
+		uint16_t CLASS = atoi16(records,location);
+		if(debug) cout << "CLASS: "<< CLASS << endl;
+		uint32_t TTL = atoi32(records,location);
+		if(debug) cout << "TTL: "<< TTL << endl;
+		uint16_t RDLENGTH = atoi16(records,location);
+		if(debug) cout << "RDLENGTH: " << RDLENGTH << endl;
+		location+=RDLENGTH;
+	}
+	for(int i = 0; i<ARCOUNT; i++) {
+		cout << "Additional Records:" << endl;
+	
+		string NAME = recParse(records,location);
+		if(debug) cout << "NAME: "<< NAME << endl;
+		uint16_t TYPE = atoi16(records,location);
+		if(debug) cout << "TYPE: "<< TYPE << endl;
+		uint16_t CLASS = atoi16(records,location);
+		if(debug) cout << "CLASS: "<< CLASS << endl;
+		uint32_t TTL = atoi32(records,location);
+		if(debug) cout << "TTL: "<< TTL << endl;
+		uint16_t RDLENGTH = atoi16(records,location);
+		if(debug) cout << "RDLENGTH: " << RDLENGTH << endl;
+		string RDATA = ParseIP(records.substr(location,RDLENGTH));
+		if(debug) cout << "RDATA: " << RDATA << endl;
+		location+=RDLENGTH;
+		server newServer = server(RDATA,NAME);
+		if(RDLENGTH == 4) newList.push_back(newServer);
+	}
+	return newList;
+}
+
+vector<server> parse(string response, int qSize){
 	if(debug) cout << response << endl;
 	bool AA;
-	AA =BIT((response[2]),5);
+	AA =BIT((response[2]),2);
 	if(AA){
 		if(debug) cout << "AA IS TRUE" << endl;
 	}
@@ -150,12 +260,19 @@ void parse(string response){
 	uint16_t ANCOUNT = response[7];
 	uint16_t NSCOUNT = response[9];
 	uint16_t ARCOUNT = response[11];
-	if(debug) cout << ANCOUNT << " " << NSCOUNT << " " << ARCOUNT << endl;	
+	if(debug) cout << ANCOUNT << " " << NSCOUNT << " " << ARCOUNT << endl;
 	switch (RCODE)
 	{
 	case 0:
 		// SUCCESS!
-//		return successParse(response);
+		if(debug) cout << "Question+Header size: "<< qSize<< endl;
+		if(AA && ANCOUNT != 0){
+			cout << "PARTY RIGHT!" << endl;
+			exit(0);
+			successParse(response,ANCOUNT);
+		}else{
+			return nextParse(response,qSize,ANCOUNT,NSCOUNT,ARCOUNT);
+		}
 		break;
 	case 1: // Formatted request incorrectly.
 		cout << "Incorrectly formatted request, exiting" <<endl;
@@ -165,8 +282,10 @@ void parse(string response){
 		cout << "Server was unavalible. Trying another" <<endl;
 		break;
 	case 3: // Name doesn't exist, AN HERO.
-		cout << "Sorry, no record found" << endl;
-		exit(0);
+		if(AA && ANCOUNT == 0){
+			cout << "Sorry, no record found" << endl;
+			exit(0);
+		}
 		break;
 	case 4: // not imprlemented? WTF.
 		cout << "Server doesn't run IPV6 DNS? Retrying" << endl;
@@ -178,43 +297,70 @@ void parse(string response){
 		cout << "Server responded with an unknown RCODE." << endl;
 		break;
 	}
-//	return NULL;	
+	vector<server> null;
+	return null;	
 }
 
-void attempt(vector<server> & servers,header toSend,question toSend2){
+/*
+ * This method attepmts to connect to a random server from the list of servers
+ *
+ */
+void attempt(vector<server> & servers,header pktHeader,question pktPayload){
 	
-	cout << "attempting to connect to a listed server" << endl;
+	if(debug) cout << "attempting to connect to a listed server" << endl;
 	srand(time(NULL));
 	int Response = 0;
+
 	while(!Response){
 		if(debug) cout << "trying to find a random server out of: "<< servers.size() << endl;
 		if(debug) cout << "RANDOM NUMBER TEST: "<<rand()<< endl;
+
+		//Pick a random server to send
 		int srvNum = rand() % servers.size();
+
 		if(debug) cout << "sending to: " << servers[srvNum].getName() << endl;
-		stringstream toSendAway;
-		uint16_t version = htons(toSend.version);
-		uint16_t flags = htons(toSend.flags);
-		uint16_t queries = htons(toSend.queries);
-		uint16_t answers = htons(toSend.answers);
-		uint16_t nservers = htons(toSend.nservers);
-		uint16_t addservers = htons(toSend.addservers);
-		toSendAway.write((char*)&version,2);
-		toSendAway.write((char*)&flags,2);
-                toSendAway.write((char*)&queries,2);
-     		toSendAway.write((char*)&answers,2);
-                toSendAway.write((char*)&nservers,2);
-                toSendAway.write((char*)&addservers,2);
-		toSendAway.write(toSend2.QNAME,toSend2.numBytes);
+		
+		//This is the overall packet to send
+		stringstream dnsPacket;
+
+		//Formatting the differnt fields of the header
+		uint16_t version = htons(pktHeader.version);
+		uint16_t flags = htons(pktHeader.flags);
+		uint16_t queries = htons(pktHeader.queries);
+		uint16_t answers = htons(pktHeader.answers);
+		uint16_t nservers = htons(pktHeader.nservers);
+		uint16_t addservers = htons(pktHeader.addservers);
+
+		//Add the formatted header fields to the packet
+		dnsPacket.write((char*)&version,2);
+		dnsPacket.write((char*)&flags,2);
+                dnsPacket.write((char*)&queries,2);
+     		dnsPacket.write((char*)&answers,2);
+                dnsPacket.write((char*)&nservers,2);
+                dnsPacket.write((char*)&addservers,2);
+
+		//Format and add the DNS quiery data to the packet
+		dnsPacket.write(pktPayload.QNAME,pktPayload.numBytes);
 		uint8_t stopper = 0;
-		uint16_t qtype = htons(toSend2.QTYPE);
-		uint16_t qclass = htons(toSend2.QCLASS);
-		toSendAway.write((char*)&stopper,1);
-		toSendAway.write((char*)&qtype,2);
-		toSendAway.write((char*)&qclass,2);
-		string results = sendOut(servers[srvNum].getIP(),toSendAway.str());
-		parse(results);
-		alarm(3);
+		uint16_t qtype = htons(pktPayload.QTYPE);
+		uint16_t qclass = htons(pktPayload.QCLASS);
+		dnsPacket.write((char*)&stopper,1);
+		dnsPacket.write((char*)&qtype,2);
+		dnsPacket.write((char*)&qclass,2);
+		int numbytes = dnsPacket.str().size();
+		//send the packet
+		string results = sendOut(servers[srvNum].getIP(),dnsPacket.str());
+
+		//if we get an answer, extract the information
+		vector<server> newServerList = parse(results,numbytes);
+		if(!newServerList.empty()){
+			attempt(newServerList,pktHeader,pktPayload);
+
+		}
+		//if we dont' get an answer, timeout amd pick another server from the list
 		servers.erase(servers.begin()+srvNum);
+		
+		//if there are no servers, then no answer found
 		if(servers.size() == 0){
 			cout<<"No Record avalible"<<endl;
 			exit(1);
