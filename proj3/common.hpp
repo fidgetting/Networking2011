@@ -1,7 +1,7 @@
 /*
  * common.hpp
  *
- *  Created on: Aug 28, 2011
+ *  Created on: Dec 1, 2011
  *      Author: mallal, norton, savage, sorenson
  */
 
@@ -13,7 +13,7 @@
 #include <vector>
 
 #pragma pack(1)
-struct header{
+struct header {
     uint16_t version;
     uint16_t flags;
     uint16_t queries;
@@ -21,14 +21,14 @@ struct header{
     uint16_t nservers;
     uint16_t addservers;
 };
+
 #pragma pack(1)
 struct question{
 	int numBytes;
 	char QNAME[FILENAME_MAX];
 	uint16_t QTYPE;	
 	uint16_t QCLASS;
-};
-    
+};    
 
 #pragma pack()
 struct answer {

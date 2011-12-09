@@ -1,26 +1,24 @@
 
 
-CXX = g++
-CFLAGS = -O3 -Wall -std=c++0x -g
+CXX = clang
+LINK = g++
+CFLAGS = -O3 -Wall -g
 INCPATH = -I.
-DEF = 
+DEF = -DDEBUG
 EXE = myresolver
 
-OBJS = service.o  \
-       socket.o \
+OBJS = myresolver.o \
 
-HEAD = socket.hpp  \
-       service.hpp \
-       common.hpp  \
+HEAD = common.hpp  \
+       Makefile \
 
 
 all: $(EXE)
-
-myresolver: proj3_myresolver.cpp $(OBJS) $(HEAD)
-	$(CXX) $< -o $@ $(OBJS) $(CFLAGS) $(INCPATH)
+$(EXE): $(OBJS) $(HEAD)
+	$(LINK) -o $(EXE) $(OBJS) $(DEF) $(CFLAGS) $(INCPATH)
 
 $(OBJS): %.o: %.cpp $(HEAD)
-	$(CXX) -c $(INCPATH) $(CFLAGS)  $(DEF) -o $@ $< 
+	$(CXX) -c $< $(DEF) $(CFLAGS) $(INCPATH) -o $@
 
 clean:
 	rm -f $(EXE) *.o

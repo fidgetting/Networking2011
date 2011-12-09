@@ -1,397 +1,518 @@
-#include <iostream>
-#include <string>
-#include <vector>
-#include <stdlib.h>
-#include <sstream>
-#include <time.h>
-#include <string.h>
-#include <signal.h>
-#include <socket.hpp>
+/*
+ * common.hpp
+ *
+ *  Created on: Dec 1, 2011
+ *      Author: mallal, norton, savage, sorenson
+ */
+
+/* local includes */
 #include <common.hpp>
+
+/* unix includes */
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <inttypes.h>
-#include <stdio.h>
 
-using namespace std;
+/* c std library includes */
+#include <cerrno>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
 
-const int debug = 1;
+/* ************************************************************************** */
+/* *** Utility functions and defines **************************************** */
+/* ************************************************************************** */
 
+#ifdef DEBUG
+#define DEBUG_PRINT(str) std::cout << str << std::endl
+#else
+#define DEBUG_PRINT(str)
+#endif
+
+#define FATAL(str) { \
+		std::cerr << "FATAL: " << __FILE__ << "." << __LINE__ << ": " << str << std::endl; \
+		exit(-1); }
 
 #define BUF_SIZE 8192
 #define BIT(var ,shift) (var & (1 << shift))
 
-class server{
-     private:
-    	string IP;
-    	string name;
-     public:
-     	server(string server,string IP);
-	string getName();
-	string getIP();
+uint16_t atoi16(const std::string& records, uint32_t& location) {
+  uint16_t value = records[location]
+                           + (records[location+1] << 8);
+  location += 2;
+  return ntohs(value);
+}
+
+uint16_t atoi32(const std::string& records, uint32_t& location) {
+  uint32_t value = records[location]
+                           + (records[location+1] << 8)
+                           + (records[location+2] << 16)
+                           + (records[location+3] << 24);
+  location += 4;
+  return ntohl(value);
+}
+
+enum RCODE_t {
+  SUCCESS = 0,
+  FORMAT  = 1,
+  SERVER  = 2,
+  NAME    = 3,
+  NOT_IMP = 4,
+  REFUSED = 5
 };
 
-server::server(string sIP,string sServer){
-	IP = sIP;
-        name = sServer;
+/* ************************************************************************** */
+/* *** dns server information *********************************************** */
+/* ************************************************************************** */
+
+class server{
+  public:
+    server(const std::string& IP, const std::string& name) :
+      _IP(IP), _name(name) { }
+
+    inline const std::string&  name() const { return _name; }
+    inline const std::string&    IP() const { return _IP;   }
+
+  private:
+    std::string _IP;
+    std::string _name;
+};
+
+std::vector<server> initialize(){
+  std::vector<server> vServers;
+  vServers.push_back(server("198.41.0.4",     "ns.internic.net" ));
+  vServers.push_back(server("192.228.79.201", "ns1.isi.edu"     ));
+  vServers.push_back(server("192.33.4.12",    "c.psi.net"       ));
+  vServers.push_back(server("128.8.10.90",    "terp.umd.edu"    ));
+  vServers.push_back(server("192.203.230.10", "ns.nasa.gov"     ));
+  vServers.push_back(server("192.5.5.241",    "ns.isc.org"      ));
+  vServers.push_back(server("192.112.36.4",   "ns.nic.ddn.mil"  ));
+  vServers.push_back(server("128.63.2.53",    "aos.arl.army.mil"));
+  vServers.push_back(server("192.36.148.17",  "nic.nordu.net"   ));
+  vServers.push_back(server("192.58.128.30",  "Verisign"        ));
+  vServers.push_back(server("193.0.14.129",   "RIPE NCC"        ));
+  vServers.push_back(server("199.7.83.42",    "ICANN"           ));
+  vServers.push_back(server("202.12.27.33",   "WIDE Project"    ));
+  return vServers;
 }
 
-string server::getIP(){
-       	return IP;
+/* ************************************************************************** */
+/* *** function delcarations ************************************************ */
+/* ************************************************************************** */
+
+void makeHeader(header&);
+void makeQuestion(std::string, question&);
+
+std::string sendOut(const std::string&, const std::string&);
+std::string recParse(const std::string&, uint32_t&, bool = true);
+std::string ParseIP(const std::string&);
+std::vector<server> nextParse(const std::string&, uint32_t, uint16_t, uint16_t, uint16_t);
+std::vector<server> parse(std::string response, uint32_t qSize);
+void attempt(std::vector<server>& servers, const header& pktHeader, const question& pktPayload);
+
+/* ************************************************************************** */
+/* *** TODO ***************************************************************** */
+/* ************************************************************************** */
+
+void makeHeader(header& q) {
+  DEBUG_PRINT("packing query");
+  q.version = 0;
+  q.flags = 0;
+  q.queries = 1;
+  q.answers = 0;
+  q.nservers = 0;
+  q.addservers = 0;
+  DEBUG_PRINT("packing finished");
 }
 
-string server::getName(){
-	return name;
+void makeQuestion(std::string name, question& q) {
+  std::stringstream ss;
+  std::string j;
+  int index = 0;
+  uint8_t numChar;
+
+  std::cout << name << std::endl;
+  for(unsigned int i= 0;i< name.size();i++){
+    if(name[i] == '.'){
+      name[i] = ' ';
+    }
+  }
+  std::cout << name << std::endl;
+  ss << name;
+
+  while(ss >> j){
+    numChar = j.size();
+    q.QNAME[index++] = numChar;
+    for(unsigned int k = 0;k<j.size();k++){
+      q.QNAME[index++] = j[k];
+      q.numBytes++;
+    }
+    q.numBytes++;
+  }
+
+  q.QTYPE=28;
+  q.QCLASS=1;
 }
 
+/**
+ * TODO???
+ *
+ * @param response
+ * @param ANCOUNT
+ */
+void successParse(std::string response, uint16_t ANCOUNT){
 
-
-vector<server> initialize(){
-	vector<server> vServers;
-	vServers.push_back(server("198.41.0.4","ns.internic.net"));
-	vServers.push_back(server("192.228.79.201","ns1.isi.edu"));
-	vServers.push_back(server("192.33.4.12","c.psi.net"));
-	vServers.push_back(server("128.8.10.90","terp.umd.edu"));
-	vServers.push_back(server("192.203.230.10","ns.nasa.gov"));
-	vServers.push_back(server("192.5.5.241","ns.isc.org"));
-	vServers.push_back(server("192.112.36.4","ns.nic.ddn.mil"));
-	vServers.push_back(server("128.63.2.53","aos.arl.army.mil"));
-	vServers.push_back(server("192.36.148.17","nic.nordu.net"));
-	vServers.push_back(server("192.58.128.30","Verisign"));
-	vServers.push_back(server("193.0.14.129","RIPE NCC"));
-	vServers.push_back(server("199.7.83.42","ICANN"));
-	vServers.push_back(server("202.12.27.33","WIDE Project"));
-	return vServers;
 }
+
+/**
+ * Sends the intial dns query and recieves the response
+ *
+ * @param IP the ip address of the server
+ * @param sendMe the string query
+ * @return the string recieved from the server
+ */
+std::string sendOut(const std::string& IP, const std::string& sendMe) {
+  std::streamsize numBytesRecv = 0;
+  struct addrinfo info, *res;
+  uint32_t sock;
+  uint32_t numSendBytes = sendMe.size();
+  char head[BUF_SIZE];
+
+  /* get the networking info for dns server */
+  memset(&info, 0, sizeof info);
+  info.ai_family = AF_INET;
+  info.ai_socktype = SOCK_DGRAM;
+  getaddrinfo(IP.c_str(), "53", &info, &res);
+
+  //set up the socket and connect
+  if((sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
+    FATAL("socket call failed for dns server connection: " << strerror(errno));
+  if(connect(sock, res->ai_addr, res->ai_addrlen) == -1)
+    FATAL("unable to connect to the dns server");
+  if (send(sock, (void *)sendMe.c_str(), numSendBytes,0) < numSendBytes)
+    FATAL("unable to send query to dns server");
+  if((numBytesRecv = recv(sock, head, BUF_SIZE-1, 0)) == -1)
+    FATAL("failed receiving from dns server");
+
+  std::stringstream results;
+  results.write(head, numBytesRecv);
+  return results.str();
+}
+
+/**
+ * TODO
+ *
+ * @param records
+ * @param location
+ * @param first
+ * @return
+ */
+std::string recParse(const std::string & records, uint32_t& location, bool first) {
+  std::stringstream ss;
+  uint8_t  numchars = records[location];
+  uint32_t start;
+
+  if(numchars == 0)
+    return "";
+
+  if(BIT(records[location], 7) && BIT(records[location], 6)) {
+    //knock off the first 11... of a compressed record
+    start = (atoi16(records, location) + 1) & 63;
+    return recParse(records, start, first);
+  }
+
+  start = (++location);
+  while(location < start+numchars){
+    ss << records[location];
+    location++;
+
+    //TODO something with ss;
+  }
+
+
+  return first ?
+      ss.str() + recParse(records, location, false):
+      "." + ss.str() + recParse(records, location, first);
+}
+
+/**
+ * TODO
+ *
+ * @param records
+ * @return
+ */
+std::string ParseIP(const std::string& records) {
+  int numchars = records.size();
+  std::stringstream ss;
+
+  for(int i = 0; i < numchars; i++) {
+    if(i || i == numchars -1)
+      ss <<  ".";
+    ss << int(records[i]);
+  }
+
+  return ss.str();
+}
+
+/**
+ * TODO
+ *
+ * @param records
+ * @param location
+ * @param ANCOUNT
+ * @param NSCOUNT
+ * @param ARCOUNT
+ * @return
+ */
+std::vector<server> nextParse(const std::string& records, uint32_t location, uint16_t ANCOUNT, uint16_t NSCOUNT, uint16_t ARCOUNT) {
+  std::vector<server> newList;
+  std::string NAME;
+  std::string RDATA;
+  uint16_t TYPE;
+  uint16_t CLASS;
+  uint32_t TTL;
+  uint16_t RDLENGTH;
+
+  for(int i = 0; i<ANCOUNT; i++){
+    DEBUG_PRINT(recParse(records,location));
+
+    uint16_t TYPE = atoi16(records,location);
+    uint16_t CLASS = atoi16(records,location);
+
+    /* TODO */
+  }
+
+  for(int i = 0; i < NSCOUNT; i++){
+    NAME     = recParse(records, location);
+    TYPE     = atoi16(records,location);
+    CLASS    = atoi16(records,location);
+    TTL      = atoi32(records,location);
+    RDLENGTH = atoi16(records,location);
+    location += RDLENGTH;
+
+    DEBUG_PRINT("Name Server Records:");
+    DEBUG_PRINT("  NAME:     " << NAME    );
+    DEBUG_PRINT("  TYPE:     " << TYPE    );
+    DEBUG_PRINT("  CLASS:    " << CLASS   );
+    DEBUG_PRINT("  TTL:      " << TTL     );
+    DEBUG_PRINT("  RDLENGTH: " << RDLENGTH);
+  }
+
+  for(int i = 0; i<ARCOUNT; i++) {
+    NAME     = recParse(records, location);
+    TYPE     = atoi16(records,location);
+    CLASS    = atoi16(records,location);
+    TTL      = atoi32(records,location);
+    RDLENGTH = atoi16(records,location);
+    RDATA    = ParseIP(records.substr(location, RDLENGTH));
+    location += RDLENGTH;
+
+    DEBUG_PRINT("Additional Records:");
+    DEBUG_PRINT("  NAME:     " << NAME    );
+    DEBUG_PRINT("  TYPE:     " << TYPE    );
+    DEBUG_PRINT("  CLASS:    " << CLASS   );
+    DEBUG_PRINT("  TTL:      " << TTL     );
+    DEBUG_PRINT("  RDLENGTH: " << RDLENGTH);
+
+    if(RDLENGTH == 4)
+      newList.push_back(server(RDATA,NAME));
+    /* TODO ipv6 */
+  }
+
+  return newList;
+}
+
+/**
+ * TODO
+ *
+ * @param response
+ * @param qSize
+ * @return
+ */
+std::vector<server> parse(std::string response, uint32_t qSize) {
+  uint8_t RCODE;
+  uint16_t ANCOUNT;
+  uint16_t NSCOUNT;
+  uint16_t ARCOUNT;
+  bool AA;
+
+  DEBUG_PRINT(response);
+  if((AA = BIT((response[2]),2))){
+    DEBUG_PRINT("AA is true");
+
+    // TODO other stuff
+  }
+
+  DEBUG_PRINT("RCODE before AND: " << response[3]);
+
+  RCODE   = response[3] & 15;
+  ANCOUNT = response[7];
+  NSCOUNT = response[9];
+  ARCOUNT = response[11];
+
+  DEBUG_PRINT("RCODE after AND: "<< RCODE);
+  DEBUG_PRINT(ANCOUNT << " " << NSCOUNT << " " << ARCOUNT);
+
+  switch (RCODE)
+  {
+    case SUCCESS:
+      DEBUG_PRINT("Question + Header size: " << qSize);
+      if(AA && ANCOUNT != 0){
+        DEBUG_PRINT("It worked");
+        successParse(response,ANCOUNT);
+      }else{
+        return nextParse(response,qSize,ANCOUNT,NSCOUNT,ARCOUNT);
+      }
+      break;
+
+    case FORMAT: // Formatted request incorrectly.
+      FATAL("Incorrectly formatted request, exiting");
+      break;
+
+    case SERVER: // Server Screwed up. Try something else
+      DEBUG_PRINT("Server was unavailable. Trying another");
+      break;
+
+    case NAME: // Name doesn't exist, AN HERO.
+      if(AA && ANCOUNT == 0){
+        std::cout << "Sorry, no record found" << std::endl;
+        exit(0);
+      }
+      break;
+
+    case NOT_IMP: // not implemented? WTF???
+      DEBUG_PRINT("Server doesn't run IPV6 DNS? Retrying");
+      break;
+
+    case REFUSED: // Server Refused
+      DEBUG_PRINT("Server refuses to fulfill request.");
+      break;
+
+    default: // Server apparently doesn't follow the RFC? WTF???
+      DEBUG_PRINT("Server responded with an unknown RCODE.");
+      break;
+  }
+
+  return std::vector<server>();
+}
+
+/**
+ * Attempts to connect to dns server
+ *
+ * @param servers
+ * @param pktHeader
+ * @param pktPayload
+ */
+void attempt(std::vector<server>& servers, const header& pktHeader, const question& pktPayload) {
+  uint16_t version, flags, queries, answers, nservers, addservers, qtype, qclass;
+  std::vector<server> newServerList;
+  std::stringstream dnsPacket;
+  std::string results;
+  uint32_t Response = 0;
+  uint32_t srvNum;
+  uint32_t numbytes;
+  uint8_t  stopper;
+
+  DEBUG_PRINT("attempting to connect to a listed server");
+
+  while(!Response) {
+    DEBUG_PRINT("trying to find a random server out of: "<< servers.size());
+
+    //Pick a random server to send
+    srvNum  = rand() % servers.size();
+    stopper = 0;
+
+    DEBUG_PRINT("sending to: " << servers[srvNum].name());
+
+    //Formatting the differnt fields of the header
+    version    = htons(pktHeader.version);
+    flags      = htons(pktHeader.flags);
+    queries    = htons(pktHeader.queries);
+    answers    = htons(pktHeader.answers);
+    nservers   = htons(pktHeader.nservers);
+    addservers = htons(pktHeader.addservers);
+
+    //Add the formatted header fields to the packet
+    dnsPacket.write((char*)&version,   2);
+    dnsPacket.write((char*)&flags,     2);
+    dnsPacket.write((char*)&queries,   2);
+    dnsPacket.write((char*)&answers,   2);
+    dnsPacket.write((char*)&nservers,  2);
+    dnsPacket.write((char*)&addservers,2);
+
+    //Format and add the DNS quiery data to the packet
+    dnsPacket.write(pktPayload.QNAME,pktPayload.numBytes);
+    qtype = htons(pktPayload.QTYPE);
+    qclass = htons(pktPayload.QCLASS);
+    dnsPacket.write((char*)&stopper,1);
+    dnsPacket.write((char*)&qtype,2);
+    dnsPacket.write((char*)&qclass,2);
+    numbytes = dnsPacket.str().size();
+
+    //send the packet
+    results = sendOut(servers[srvNum].IP(),dnsPacket.str());
+
+    //if we get an answer, extract the information
+    newServerList = parse(results,numbytes);
+    if(!newServerList.empty()){
+      attempt(newServerList,pktHeader,pktPayload);
+    }
+
+    //if we dont' get an answer, timeout amd pick another server from the list
+    servers.erase(servers.begin()+srvNum);
+
+    //if there are no servers, then no answer found
+    if(servers.size() == 0){
+      std::cout << "No Record avalible" << std::endl;
+      exit(1);
+    }
+  }
+}
+
+/* ************************************************************************** */
+/* *** main types *********************************************************** */
+/* ************************************************************************** */
 
 int usage(){
-	cout << "Usage: myresolver hostname\n";
-	exit(0);
+  std::cout << "Usage: myresolver hostname" << std::endl;
+  exit(0);
 }
 
-header makeHeader(){
-	if(debug) cout << "packing query" << endl;
-	header q;
-	q.version = 0;
-        q.flags = 0;
-        q.queries = 1;
-        q.answers = 0;
-        q.nservers = 0;
-        q.addservers = 0;
-        if(debug) cout << "packing finished" << endl;
-	return q;
-	
-}
+int main(int argc,char *argv[]) {
+  std::vector<server> hostServers;
+  std::vector<server> servers;
+  std::stringstream ss;
+  header qName;
+  question hName;
+  bool bFound, bNextPack;
 
-question makeQuestion(string name){
-	question q;
-	cout << name << endl;
-	for(unsigned int i= 0;i< name.size();i++){
-              if(name[i] == '.'){
-                      name[i] = ' ';
-              }
-        }
-        cout << name << endl;
-	stringstream ss;
-	ss << name;
+  /* starting intializations */
+  if(argc != 2) usage();
+  hostServers = initialize();
+  servers = hostServers;
+  srand(time(NULL));
+  bFound    = false;
+  bNextPack = false;
 
-	string j;
-	int index = 0;
-	while(ss >> j){
-		uint8_t numChar = j.size();
-		q.QNAME[index++] = numChar;
-		for(unsigned int k = 0;k<j.size();k++){
-			q.QNAME[index++] = j[k];
-			q.numBytes++;
-		}
-		q.numBytes++;
-		
-	}
-	q.QTYPE=28;
-	q.QCLASS=1;
-	return q;
-}
+  DEBUG_PRINT("Number of Host Servers Loaded: " << hostServers.size());
+  DEBUG_PRINT("site: " << argv[1]);
 
-//kore wa nan desu ka?
-void successParse(string response, uint16_t ANCOUNT){
+  ss << argv[1];
+  makeHeader(qName);
+  makeQuestion(ss.str(), hName);
 
-}
+  while(!bFound){
+    while(!bNextPack){
+      attempt(hostServers, qName, hName);
+    }
+  }
 
-
-//Sends the quiery and recieves the answer
-string sendOut(string IP, string sendMe){
-	//Set up the adderinfo struct
-	struct addrinfo info, *reinfo;
-	memset(&info, 0, sizeof info);
-	info.ai_family = AF_INET;
-	info.ai_socktype = SOCK_DGRAM;
-
-	//TODO pack own struct!
-	getaddrinfo(IP.c_str(), "53", &info, &reinfo);
-
-	//set up the socket and connect
-	//TODO error check here
-	int sock = socket(reinfo->ai_family, reinfo->ai_socktype, reinfo->ai_protocol);
-	connect(sock, reinfo->ai_addr, reinfo->ai_addrlen);
-
-	int numSendBytes = sendMe.size();
-	char head[BUF_SIZE];
-        int numBytesRecv = 0;
-
-	if (send(sock, (void *)sendMe.c_str(),numSendBytes,0) < numSendBytes){
-		cerr << "Did not send the whole packet" << endl; 
-	}
-	if((numBytesRecv = recv(sock,head,BUF_SIZE-1,0)) == -1){
-		cout << "FAILURE" << endl;			
-	}
-	stringstream results;
-	results.write(head,numBytesRecv);
-	return results.str();
-}
-/*
-uint16_t atoi16(char val1,char val2){
-		cout << "val1 " << val1 << endl;
-		uint16_t value = val2 + (val1 << 8);
-		return value;
-}*/
-
-uint16_t atoi16(string records,int & location){
-	uint16_t value = records[location] + (records[location+1] << 8);
-	location += 2;
-	return ntohs(value);
-}
-
-uint16_t atoi32(string records,int & location){
-	uint32_t value = records[location] + (records[location+1] << 8)
-			+ (records[location+2] << 16)
-			+ (records[location+3] << 24);
-	location += 4;
-	return ntohl(value);
-}
-
-string recParse(string & records, int & location, bool first=true ){
-	uint8_t numchars = records[location];
-	if(numchars == 0) return "";
-	stringstream ss;
-	if(BIT(records[location],6) && BIT(records[location],7)) {
-		//if(debug) cout << "COMPRESSION FOUND: "<< location << endl;
-		uint16_t ofst = atoi16(records, location)+1;
-		//knock off the first 11... of a compressed record
-		int offset = ofst & 63;
-		//if(debug) cout << "OFFSET IS: "<< offset <<endl;
-		return recParse(records, offset,first);
-	}
-	location++;
-	int start = location;
-	//cout << "NO COMPRESSION: " << location << " " << numchars << endl;
-	for(location; location < start+numchars; location++){
-		ss << records[location]; 
-		
-		//TODO something with ss;
-	}
-	if(first) return ss.str()+recParse(records,location,false);
-	else return "."+ss.str()+recParse(records,location,first);
-}
-
-string ParseIP(string records){
-	int numchars = records.size();
-	stringstream ss;
-	for(int i = 0; i < numchars;i++){
-		if(i || i == numchars -1) ss <<  ".";
-		uint8_t var = records[i];
-		int var2 = var;
-		ss << var2;
-	}
-	return ss.str();
-}
-vector<server> nextParse(string records,int location,uint16_t ANCOUNT, uint16_t NSCOUNT, uint16_t ARCOUNT){	
-	vector<server> newList;
-	for(int i = 0; i<ANCOUNT; i++){
-		if(debug) cout << recParse(records,location) << endl;
-		uint16_t TYPE = atoi16(records,location);
-		uint16_t CLASS = atoi16(records,location);
-	}
-	for(int i = 0; i<NSCOUNT; i++){
-		string NAME = recParse(records,location);
-		if(debug) cout << "NAME: "<< NAME << endl;
-		uint16_t TYPE = atoi16(records,location);
-		if(debug) cout << "TYPE: "<< TYPE << endl;
-		uint16_t CLASS = atoi16(records,location);
-		if(debug) cout << "CLASS: "<< CLASS << endl;
-		uint32_t TTL = atoi32(records,location);
-		if(debug) cout << "TTL: "<< TTL << endl;
-		uint16_t RDLENGTH = atoi16(records,location);
-		if(debug) cout << "RDLENGTH: " << RDLENGTH << endl;
-		location+=RDLENGTH;
-	}
-	for(int i = 0; i<ARCOUNT; i++) {
-		cout << "Additional Records:" << endl;
-	
-		string NAME = recParse(records,location);
-		if(debug) cout << "NAME: "<< NAME << endl;
-		uint16_t TYPE = atoi16(records,location);
-		if(debug) cout << "TYPE: "<< TYPE << endl;
-		uint16_t CLASS = atoi16(records,location);
-		if(debug) cout << "CLASS: "<< CLASS << endl;
-		uint32_t TTL = atoi32(records,location);
-		if(debug) cout << "TTL: "<< TTL << endl;
-		uint16_t RDLENGTH = atoi16(records,location);
-		if(debug) cout << "RDLENGTH: " << RDLENGTH << endl;
-		string RDATA = ParseIP(records.substr(location,RDLENGTH));
-		if(debug) cout << "RDATA: " << RDATA << endl;
-		location+=RDLENGTH;
-		server newServer = server(RDATA,NAME);
-		if(RDLENGTH == 4) newList.push_back(newServer);
-	}
-	return newList;
-}
-
-vector<server> parse(string response, int qSize){
-	if(debug) cout << response << endl;
-	bool AA;
-	AA =BIT((response[2]),2);
-	if(AA){
-		if(debug) cout << "AA IS TRUE" << endl;
-	}
-	if(debug) cout <<"RCODE before AND: " << response[3] << endl;
-	uint8_t RCODE =response[3] & 15;
-	if(debug) cout <<"RCODE after AND: "<< RCODE << endl;
-	uint16_t ANCOUNT = response[7];
-	uint16_t NSCOUNT = response[9];
-	uint16_t ARCOUNT = response[11];
-	if(debug) cout << ANCOUNT << " " << NSCOUNT << " " << ARCOUNT << endl;
-	switch (RCODE)
-	{
-	case 0:
-		// SUCCESS!
-		if(debug) cout << "Question+Header size: "<< qSize<< endl;
-		if(AA && ANCOUNT != 0){
-			cout << "PARTY RIGHT!" << endl;
-			exit(0);
-			successParse(response,ANCOUNT);
-		}else{
-			return nextParse(response,qSize,ANCOUNT,NSCOUNT,ARCOUNT);
-		}
-		break;
-	case 1: // Formatted request incorrectly.
-		cout << "Incorrectly formatted request, exiting" <<endl;
-		exit(1);
-		break;
-	case 2: // Server Screwed up. Try something else
-		cout << "Server was unavalible. Trying another" <<endl;
-		break;
-	case 3: // Name doesn't exist, AN HERO.
-		if(AA && ANCOUNT == 0){
-			cout << "Sorry, no record found" << endl;
-			exit(0);
-		}
-		break;
-	case 4: // not imprlemented? WTF.
-		cout << "Server doesn't run IPV6 DNS? Retrying" << endl;
-		break;
-	case 5: // Server Refused
-		cout << "Server refuses to fufill request." << endl;
-		break;
-	default: // Server apperently doesn't follow the RFC. WTF.
-		cout << "Server responded with an unknown RCODE." << endl;
-		break;
-	}
-	vector<server> null;
-	return null;	
-}
-
-/*
- * This method attepmts to connect to a random server from the list of servers
- *
- */
-void attempt(vector<server> & servers,header pktHeader,question pktPayload){
-	
-	if(debug) cout << "attempting to connect to a listed server" << endl;
-	srand(time(NULL));
-	int Response = 0;
-
-	while(!Response){
-		if(debug) cout << "trying to find a random server out of: "<< servers.size() << endl;
-		if(debug) cout << "RANDOM NUMBER TEST: "<<rand()<< endl;
-
-		//Pick a random server to send
-		int srvNum = rand() % servers.size();
-
-		if(debug) cout << "sending to: " << servers[srvNum].getName() << endl;
-		
-		//This is the overall packet to send
-		stringstream dnsPacket;
-
-		//Formatting the differnt fields of the header
-		uint16_t version = htons(pktHeader.version);
-		uint16_t flags = htons(pktHeader.flags);
-		uint16_t queries = htons(pktHeader.queries);
-		uint16_t answers = htons(pktHeader.answers);
-		uint16_t nservers = htons(pktHeader.nservers);
-		uint16_t addservers = htons(pktHeader.addservers);
-
-		//Add the formatted header fields to the packet
-		dnsPacket.write((char*)&version,2);
-		dnsPacket.write((char*)&flags,2);
-                dnsPacket.write((char*)&queries,2);
-     		dnsPacket.write((char*)&answers,2);
-                dnsPacket.write((char*)&nservers,2);
-                dnsPacket.write((char*)&addservers,2);
-
-		//Format and add the DNS quiery data to the packet
-		dnsPacket.write(pktPayload.QNAME,pktPayload.numBytes);
-		uint8_t stopper = 0;
-		uint16_t qtype = htons(pktPayload.QTYPE);
-		uint16_t qclass = htons(pktPayload.QCLASS);
-		dnsPacket.write((char*)&stopper,1);
-		dnsPacket.write((char*)&qtype,2);
-		dnsPacket.write((char*)&qclass,2);
-		int numbytes = dnsPacket.str().size();
-		//send the packet
-		string results = sendOut(servers[srvNum].getIP(),dnsPacket.str());
-
-		//if we get an answer, extract the information
-		vector<server> newServerList = parse(results,numbytes);
-		if(!newServerList.empty()){
-			attempt(newServerList,pktHeader,pktPayload);
-
-		}
-		//if we dont' get an answer, timeout amd pick another server from the list
-		servers.erase(servers.begin()+srvNum);
-		
-		//if there are no servers, then no answer found
-		if(servers.size() == 0){
-			cout<<"No Record avalible"<<endl;
-			exit(1);
-		}	
-	}
-
-}
-
-int main(int argc,char *argv[])
-{
-	vector<server> hostServers  = initialize();
-	if(argc != 2){
-		usage();
-	}
-	if(debug){
-		cout << "Number of Host Servers Loaded: " <<
-		 hostServers.size() << endl;
-		cout << "site: "<< argv[1] << endl;
-	}
-	stringstream ss;
-	ss << argv[1];
-	header qName = makeHeader();
-	question hName = makeQuestion(ss.str());
-	int bFound = 0,bNextPack = 0;
-	vector<server> servers = hostServers;
-	while(!bFound){
-		
-		while(!bNextPack){
-			attempt(servers, qName, hName);
-		}
-	}
-
-	return 0;
+  return 0;
 }
