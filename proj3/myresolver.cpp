@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <inttypes.h>
+#include <arpa/inet.h>
 
 /* c std library includes */
 #include <cerrno>
@@ -43,6 +44,11 @@
 #define BUF_SIZE 8192
 #define BIT(var ,shift) (var & (1 << shift))
 
+#define IPV4_LEN 4
+#define IPV6_LEN 16
+
+std::string query_name;
+
 uint16_t atoi16(const std::string& records, uint32_t& location) {
   uint16_t value = records[location]
                            + (records[location+1] << 8);
@@ -66,6 +72,43 @@ enum RCODE_t {
   NAME    = 3,
   NOT_IMP = 4,
   REFUSED = 5
+};
+
+enum TYPE_t {
+  A     = 1,
+  NS    = 2,
+  MD    = 3,
+  MF    = 4,
+  CNAME = 5,
+  SOA   = 6,
+  MB    = 7,
+  MG    = 8,
+  MR    = 9,
+  null  = 10,
+  WKS   = 11,
+  PTR   = 12,
+  HINFO = 13,
+  MINFO = 14,
+  MX    = 15,
+  TXT   = 16,
+  AAAA  = 28
+};
+
+const char* TYPE_t_strings[] = {
+    "WTF", "A",  "NS",  "MD",  "MF",  "CNAME",  "SOA",  "MB",  "MG",  "MR",
+    "null",  "WKS",  "PTR",  "HINFO",  "MINFO",  "MX",  "TXT", "", "", "", "",
+    "", "", "", "", "", "", "", "AAAA"
+};
+
+enum CLASS_t {
+  IN = 1,
+  CS = 2,
+  CH = 3,
+  HS = 4
+};
+
+const char* CLASS_t_strings[] = {
+    "WTF", "IN", "CS", "CH", "HS"
 };
 
 /* ************************************************************************** */
@@ -103,6 +146,14 @@ std::vector<server> initialize(){
   return vServers;
 }
 
+struct dns_response {
+    std::string Name;
+    uint32_t TimeToLive;
+    uint16_t Class;
+    uint16_t Type;
+    struct sockaddr_in6 Addr;
+};
+
 /* ************************************************************************** */
 /* *** function delcarations ************************************************ */
 /* ************************************************************************** */
@@ -112,10 +163,11 @@ void makeQuestion(std::string, question&);
 
 std::string sendOut(const std::string&, const std::string&);
 std::string recParse(const std::string&, uint32_t&, bool = true);
-std::string ParseIP(const std::string&);
+std::string ParseIP(const std::string&, bool);
 std::vector<server> nextParse(const std::string&, uint32_t, uint16_t, uint16_t, uint16_t);
 std::vector<server> parse(std::string response, uint32_t qSize);
 void attempt(std::vector<server>& servers, const header& pktHeader, const question& pktPayload);
+void successParse(std::string records, uint32_t, uint16_t ANCOUNT);
 
 /* ************************************************************************** */
 /* *** TODO ***************************************************************** */
@@ -138,13 +190,13 @@ void makeQuestion(std::string name, question& q) {
   int index = 0;
   uint8_t numChar;
 
-  std::cout << name << std::endl;
+  DEBUG_PRINT(name);
   for(unsigned int i= 0;i< name.size();i++){
     if(name[i] == '.'){
       name[i] = ' ';
     }
   }
-  std::cout << name << std::endl;
+  DEBUG_PRINT(name);
   ss << name;
 
   while(ss >> j){
@@ -159,16 +211,6 @@ void makeQuestion(std::string name, question& q) {
 
   q.QTYPE=28;
   q.QCLASS=1;
-}
-
-/**
- * TODO???
- *
- * @param response
- * @param ANCOUNT
- */
-void successParse(std::string response, uint16_t ANCOUNT){
-
 }
 
 /**
@@ -232,10 +274,7 @@ std::string recParse(const std::string & records, uint32_t& location, bool first
   while(location < start+numchars){
     ss << records[location];
     location++;
-
-    //TODO something with ss;
   }
-
 
   return first ?
       ss.str() + recParse(records, location, false):
@@ -248,14 +287,25 @@ std::string recParse(const std::string & records, uint32_t& location, bool first
  * @param records
  * @return
  */
-std::string ParseIP(const std::string& records) {
+std::string ParseIP(const std::string& records, bool ipv6) {
   int numchars = records.size();
   std::stringstream ss;
 
+  if(ipv6) {
+
+    for(int i = 0; i < numchars; i++) {
+      if(i || i == numchars - 1)
+        ss << ":";
+      ss << std::hex << (int)static_cast<uint8_t>(records[i]);
+    }
+
+    return ss.str();
+  }
+
   for(int i = 0; i < numchars; i++) {
-    if(i || i == numchars -1)
+    if(i || i == numchars - 1)
       ss <<  ".";
-    ss << int(records[i]);
+    ss << (int)static_cast<uint8_t>(records[i]);
   }
 
   return ss.str();
@@ -281,20 +331,27 @@ std::vector<server> nextParse(const std::string& records, uint32_t location, uin
   uint16_t RDLENGTH;
 
   for(int i = 0; i<ANCOUNT; i++){
-    DEBUG_PRINT(recParse(records,location));
+    NAME     = recParse(records, location);
+    TYPE     = atoi16(records, location);
+    CLASS    = atoi16(records, location);
+    TTL      = atoi32(records, location);
+    RDLENGTH = atoi16(records, location);
+    location += RDLENGTH;
 
-    uint16_t TYPE = atoi16(records,location);
-    uint16_t CLASS = atoi16(records,location);
-
-    /* TODO */
+    DEBUG_PRINT("Name Server Records:");
+    DEBUG_PRINT("  NAME:     " << NAME    );
+    DEBUG_PRINT("  TYPE:     " << TYPE    );
+    DEBUG_PRINT("  CLASS:    " << CLASS   );
+    DEBUG_PRINT("  TTL:      " << TTL     );
+    DEBUG_PRINT("  RDLENGTH: " << RDLENGTH);
   }
 
   for(int i = 0; i < NSCOUNT; i++){
     NAME     = recParse(records, location);
-    TYPE     = atoi16(records,location);
-    CLASS    = atoi16(records,location);
-    TTL      = atoi32(records,location);
-    RDLENGTH = atoi16(records,location);
+    TYPE     = atoi16(records, location);
+    CLASS    = atoi16(records, location);
+    TTL      = atoi32(records, location);
+    RDLENGTH = atoi16(records, location);
     location += RDLENGTH;
 
     DEBUG_PRINT("Name Server Records:");
@@ -307,11 +364,11 @@ std::vector<server> nextParse(const std::string& records, uint32_t location, uin
 
   for(int i = 0; i<ARCOUNT; i++) {
     NAME     = recParse(records, location);
-    TYPE     = atoi16(records,location);
-    CLASS    = atoi16(records,location);
-    TTL      = atoi32(records,location);
-    RDLENGTH = atoi16(records,location);
-    RDATA    = ParseIP(records.substr(location, RDLENGTH));
+    TYPE     = atoi16(records, location);
+    CLASS    = atoi16(records, location);
+    TTL      = atoi32(records, location);
+    RDLENGTH = atoi16(records, location);
+    RDATA    = ParseIP(records.substr(location, RDLENGTH), RDLENGTH == IPV6_LEN);
     location += RDLENGTH;
 
     DEBUG_PRINT("Additional Records:");
@@ -323,10 +380,59 @@ std::vector<server> nextParse(const std::string& records, uint32_t location, uin
 
     if(RDLENGTH == 4)
       newList.push_back(server(RDATA,NAME));
-    /* TODO ipv6 */
   }
 
   return newList;
+}
+
+/**
+ * TODO???
+ *
+ * @param response
+ * @param ANCOUNT
+ */
+void successParse(std::string records, uint32_t location, uint16_t ANCOUNT) {
+  std::vector<dns_response> responses;
+  std::string RDATA;
+  dns_response resp;
+  uint16_t RDLENGTH;
+  char buf[INET6_ADDRSTRLEN];
+
+  for(int i = 0; i<ANCOUNT; i++) {
+    resp.Name       = recParse(records, location);
+    resp.Type       = atoi16(records, location);
+    resp.Class      = atoi16(records, location);
+    resp.TimeToLive = atoi32(records, location);
+    RDLENGTH        = atoi16(records, location);
+    RDATA           = ParseIP(records.substr(location, RDLENGTH), RDLENGTH == IPV6_LEN);
+    location += RDLENGTH;
+
+    DEBUG_PRINT("Additional Records:");
+    DEBUG_PRINT("  NAME:     " << resp.Name       );
+    DEBUG_PRINT("  TYPE:     " << resp.Type       );
+    DEBUG_PRINT("  CLASS:    " << resp.Class      );
+    DEBUG_PRINT("  TTL:      " << resp.TimeToLive );
+    DEBUG_PRINT("  RDLENGTH: " << RDLENGTH        );
+    DEBUG_PRINT("  RDATA:    " << RDATA           );
+
+    if(RDLENGTH == IPV6_LEN) {
+      inet_pton(AF_INET6, RDATA.c_str(), &(resp.Addr.sin6_addr));
+      responses.push_back(resp);
+    }
+  }
+
+  std::cout << responses.size() << " IPv6 Address Found For "
+            << query_name << ":\n" << std::endl;
+  for(std::vector<dns_response>::iterator iter = responses.begin();
+      iter != responses.end(); iter++) {
+    inet_ntop(AF_INET6, &(iter->Addr.sin6_addr), buf, INET6_ADDRSTRLEN);
+
+    std::cout << iter->Name << " " << iter->TimeToLive << " "
+        << CLASS_t_strings[iter->Class] << " " << TYPE_t_strings[iter->Type]
+        << " " << buf << std::endl;
+  }
+
+  exit(0);
 }
 
 /**
@@ -366,9 +472,9 @@ std::vector<server> parse(std::string response, uint32_t qSize) {
       DEBUG_PRINT("Question + Header size: " << qSize);
       if(AA && ANCOUNT != 0){
         DEBUG_PRINT("It worked");
-        successParse(response,ANCOUNT);
+        successParse(response, qSize, ANCOUNT);
       }else{
-        return nextParse(response,qSize,ANCOUNT,NSCOUNT,ARCOUNT);
+        return nextParse(response, qSize, ANCOUNT, NSCOUNT, ARCOUNT);
       }
       break;
 
@@ -460,9 +566,9 @@ void attempt(std::vector<server>& servers, const header& pktHeader, const questi
     results = sendOut(servers[srvNum].IP(),dnsPacket.str());
 
     //if we get an answer, extract the information
-    newServerList = parse(results,numbytes);
+    newServerList = parse(results, numbytes);
     if(!newServerList.empty()){
-      attempt(newServerList,pktHeader,pktPayload);
+      attempt(newServerList, pktHeader, pktPayload);
     }
 
     //if we dont' get an answer, timeout amd pick another server from the list
@@ -488,7 +594,6 @@ int usage(){
 int main(int argc,char *argv[]) {
   std::vector<server> hostServers;
   std::vector<server> servers;
-  std::stringstream ss;
   header qName;
   question hName;
   bool bFound, bNextPack;
@@ -504,9 +609,9 @@ int main(int argc,char *argv[]) {
   DEBUG_PRINT("Number of Host Servers Loaded: " << hostServers.size());
   DEBUG_PRINT("site: " << argv[1]);
 
-  ss << argv[1];
+  query_name = argv[1];
   makeHeader(qName);
-  makeQuestion(ss.str(), hName);
+  makeQuestion(query_name, hName);
 
   while(!bFound){
     while(!bNextPack){
