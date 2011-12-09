@@ -12,7 +12,6 @@
 #include <stdio.h>
 #include <vector>
 
-#pragma pack(1)
 struct header {
     uint16_t version;
     uint16_t flags;
@@ -20,20 +19,19 @@ struct header {
     uint16_t answers;
     uint16_t nservers;
     uint16_t addservers;
-};
+} __attribute__((__packed__));
 
-#pragma pack(1)
 struct question{
 	int numBytes;
 	char QNAME[FILENAME_MAX];
 	uint16_t QTYPE;	
 	uint16_t QCLASS;
-};    
+	uint8_t  QODD[11];
+} __attribute__((__packed__));
 
-#pragma pack()
 struct answer {
    char ans[512] ;
-};
+} __attribute__((__packed__));
 
 
 #endif /* COMMON_HPP_INCLUDE */

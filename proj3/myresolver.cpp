@@ -16,6 +16,7 @@
 #include <arpa/inet.h>
 
 /* c std library includes */
+#include <algorithm>
 #include <cerrno>
 #include <csignal>
 #include <cstdio>
@@ -129,6 +130,10 @@ class server{
     std::string _name;
 };
 
+bool operator==(const server& l, const server& r) {
+  return l.name() == r.name() && l.IP() == r.IP();
+}
+
 std::vector<server> initialize(){
   std::vector<server> vServers;
   vServers.push_back(server("198.41.0.4",     "ns.internic.net" ));
@@ -167,7 +172,7 @@ std::string recParse(const std::string&, uint32_t&, bool = true);
 std::string ParseIP(const std::string&, bool);
 std::vector<server> nextParse(const std::string&, uint32_t, uint16_t, uint16_t, uint16_t);
 std::vector<server> parse(std::string response, uint32_t qSize);
-void attempt(std::vector<server>& servers, const header& pktHeader, const question& pktPayload);
+void attempt(std::vector<server>& servers, const header& pktHeader, const question& pktPayload, std::vector<server>& stack);
 void successParse(std::string records, uint32_t, uint16_t ANCOUNT);
 
 /* ************************************************************************** */
@@ -210,8 +215,16 @@ void makeQuestion(std::string name, question& q) {
     q.numBytes++;
   }
 
-  q.QTYPE=28;
-  q.QCLASS=1;
+  q.QTYPE  = 28;
+  q.QCLASS = 1;
+
+  /* cludge */
+  q.QODD[0] = q.QODD[1] = 0;
+  q.QODD[2] = 41;
+  q.QODD[3] = 16;
+  q.QODD[4] = q.QODD[5] = q.QODD[6] = 0;
+  q.QODD[7] = 128;
+  q.QODD[8] = q.QODD[9] = q.QODD[10] = 0;
 }
 
 /**
@@ -331,7 +344,8 @@ std::vector<server> nextParse(const std::string& records, uint32_t location, uin
   uint32_t TTL;
   uint16_t RDLENGTH;
 
-  for(int i = 0; i<ANCOUNT; i++){
+  DEBUG_PRINT("Name Server Records:");
+  for(int i = 0; i < ANCOUNT; i++){
     NAME     = recParse(records, location);
     TYPE     = atoi16(records, location);
     CLASS    = atoi16(records, location);
@@ -339,14 +353,14 @@ std::vector<server> nextParse(const std::string& records, uint32_t location, uin
     RDLENGTH = atoi16(records, location);
     location += RDLENGTH;
 
-    DEBUG_PRINT("Name Server Records:");
-    DEBUG_PRINT("  NAME:     " << NAME    );
-    DEBUG_PRINT("  TYPE:     " << TYPE    );
-    DEBUG_PRINT("  CLASS:    " << CLASS   );
-    DEBUG_PRINT("  TTL:      " << TTL     );
-    DEBUG_PRINT("  RDLENGTH: " << RDLENGTH);
+    DEBUG_PRINT("  ENTRY: " << i);
+    DEBUG_PRINT("    TYPE:     " << TYPE    );
+    DEBUG_PRINT("    CLASS:    " << CLASS   );
+    DEBUG_PRINT("    TTL:      " << TTL     );
+    DEBUG_PRINT("    RDLENGTH: " << RDLENGTH);
   }
 
+  DEBUG_PRINT("Name Server Records:");
   for(int i = 0; i < NSCOUNT; i++){
     NAME     = recParse(records, location);
     TYPE     = atoi16(records, location);
@@ -355,15 +369,15 @@ std::vector<server> nextParse(const std::string& records, uint32_t location, uin
     RDLENGTH = atoi16(records, location);
     location += RDLENGTH;
 
-    DEBUG_PRINT("Name Server Records:");
-    DEBUG_PRINT("  NAME:     " << NAME    );
-    DEBUG_PRINT("  TYPE:     " << TYPE    );
-    DEBUG_PRINT("  CLASS:    " << CLASS   );
-    DEBUG_PRINT("  TTL:      " << TTL     );
-    DEBUG_PRINT("  RDLENGTH: " << RDLENGTH);
+    DEBUG_PRINT("  ENTRY: " << i);
+    DEBUG_PRINT("    TYPE:     " << TYPE    );
+    DEBUG_PRINT("    CLASS:    " << CLASS   );
+    DEBUG_PRINT("    TTL:      " << TTL     );
+    DEBUG_PRINT("    RDLENGTH: " << RDLENGTH);
   }
 
-  for(int i = 0; i<ARCOUNT; i++) {
+  DEBUG_PRINT("Additional Records:");
+  for(int i = 0; i < ARCOUNT; i++) {
     NAME     = recParse(records, location);
     TYPE     = atoi16(records, location);
     CLASS    = atoi16(records, location);
@@ -372,15 +386,20 @@ std::vector<server> nextParse(const std::string& records, uint32_t location, uin
     RDATA    = ParseIP(records.substr(location, RDLENGTH), RDLENGTH == IPV6_LEN);
     location += RDLENGTH;
 
-    DEBUG_PRINT("Additional Records:");
-    DEBUG_PRINT("  NAME:     " << NAME    );
-    DEBUG_PRINT("  TYPE:     " << TYPE    );
-    DEBUG_PRINT("  CLASS:    " << CLASS   );
-    DEBUG_PRINT("  TTL:      " << TTL     );
-    DEBUG_PRINT("  RDLENGTH: " << RDLENGTH);
+    DEBUG_PRINT("  ENTRY: " << i);
+    DEBUG_PRINT("    TYPE:     " << TYPE    );
+    DEBUG_PRINT("    CLASS:    " << CLASS   );
+    DEBUG_PRINT("    TTL:      " << TTL     );
+    DEBUG_PRINT("    RDLENGTH: " << RDLENGTH);
+    DEBUG_PRINT("    IP_ADDR:  " << RDATA   );
 
-    if(RDLENGTH == 4)
+    if(RDLENGTH == 4) {
       newList.push_back(server(RDATA,NAME));
+    }
+  }
+
+  for(int i = 0; i < newList.size(); i++) {
+    DEBUG_PRINT(newList[i].IP() << " " << newList[i].name());
   }
 
   return newList;
@@ -517,7 +536,7 @@ std::vector<server> parse(std::string response, uint32_t qSize) {
  * @param pktHeader
  * @param pktPayload
  */
-void attempt(std::vector<server>& servers, const header& pktHeader, const question& pktPayload) {
+void attempt(std::vector<server>& servers, const header& pktHeader, const question& pktPayload, std::vector<server>& stack) {
   uint16_t version, flags, queries, answers, nservers, addservers, qtype, qclass;
   std::vector<server> newServerList;
   std::stringstream dnsPacket;
@@ -529,7 +548,7 @@ void attempt(std::vector<server>& servers, const header& pktHeader, const questi
 
   DEBUG_PRINT("attempting to connect to a listed server");
 
-  while(!Response) {
+  while(!Response && !servers.empty()) {
     DEBUG_PRINT("trying to find a random server out of: "<< servers.size());
 
     //Pick a random server to send
@@ -537,6 +556,13 @@ void attempt(std::vector<server>& servers, const header& pktHeader, const questi
     stopper = 0;
 
     DEBUG_PRINT("sending to: " << servers[srvNum].name());
+
+    if(std::find(stack.begin(), stack.end(), servers[srvNum]) != stack.end()) {
+      servers.erase(std::find(servers.begin(), servers.end(), servers[srvNum]));
+      continue;
+    }
+
+    stack.push_back(servers[srvNum]);
 
     //Formatting the differnt fields of the header
     version    = htons(pktHeader.version);
@@ -555,13 +581,14 @@ void attempt(std::vector<server>& servers, const header& pktHeader, const questi
     dnsPacket.write((char*)&addservers,2);
 
     //Format and add the DNS quiery data to the packet
-    dnsPacket.write(pktPayload.QNAME,pktPayload.numBytes);
-    qtype = htons(pktPayload.QTYPE);
+    qtype  = htons(pktPayload.QTYPE);
     qclass = htons(pktPayload.QCLASS);
+    dnsPacket.write(pktPayload.QNAME,pktPayload.numBytes);
     dnsPacket.write((char*)&stopper,1);
     dnsPacket.write((char*)&qtype,2);
     dnsPacket.write((char*)&qclass,2);
-    numbytes = dnsPacket.str().size();
+    dnsPacket.write((char*)pktPayload.QODD, 11);
+    numbytes = dnsPacket.str().size() - 11;
 
     //send the packet
     results = sendOut(servers[srvNum].IP(),dnsPacket.str());
@@ -569,17 +596,18 @@ void attempt(std::vector<server>& servers, const header& pktHeader, const questi
     //if we get an answer, extract the information
     newServerList = parse(results, numbytes);
     if(!newServerList.empty()){
-      attempt(newServerList, pktHeader, pktPayload);
+      attempt(newServerList, pktHeader, pktPayload, stack);
     }
 
     //if we dont' get an answer, timeout amd pick another server from the list
     servers.erase(servers.begin()+srvNum);
+    stack.pop_back();
+  }
 
-    //if there are no servers, then no answer found
-    if(servers.size() == 0){
-      std::cout << "No Record avalible" << std::endl;
-      exit(1);
-    }
+  //if there are no servers, then no answer found
+  if(servers.empty()){
+    std::cout << "No Record avalible" << std::endl;
+    exit(1);
   }
 }
 
@@ -595,6 +623,7 @@ int usage(){
 int main(int argc,char *argv[]) {
   std::vector<server> hostServers;
   std::vector<server> servers;
+  std::vector<server> stack;
   header qName;
   question hName;
   bool bFound, bNextPack;
@@ -616,7 +645,7 @@ int main(int argc,char *argv[]) {
 
   while(!bFound){
     while(!bNextPack){
-      attempt(hostServers, qName, hName);
+      attempt(hostServers, qName, hName, stack);
     }
   }
 
