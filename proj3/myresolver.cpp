@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -292,11 +293,11 @@ std::string ParseIP(const std::string& records, bool ipv6) {
   std::stringstream ss;
 
   if(ipv6) {
-
     for(int i = 0; i < numchars; i++) {
-      if(i || i == numchars - 1)
+      if((i || i == numchars - 1) && i % 2 == 0)
         ss << ":";
-      ss << std::hex << (int)static_cast<uint8_t>(records[i]);
+      ss << std::setw(2) << std::setfill('0') << std::hex
+         << (int)static_cast<uint8_t>(records[i]);
     }
 
     return ss.str();

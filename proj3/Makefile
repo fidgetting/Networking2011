@@ -4,7 +4,7 @@ CXX = clang
 LINK = g++
 CFLAGS = -O3 -Wall -g
 INCPATH = -I.
-DEF =
+DEF = #-DDEBUG
 EXE = myresolver
 
 OBJS = myresolver.o \
