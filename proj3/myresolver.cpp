@@ -25,6 +25,7 @@
 #include <ctime>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -49,7 +50,16 @@
 #define IPV4_LEN 4
 #define IPV6_LEN 16
 
+static const std::string char64 =
+             "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+             "abcdefghijklmnopqrstuvwxyz"
+             "0123456789+/";
+
 std::string query_name;
+
+uint8_t atoi8(const std::string& records, uint32_t& location) {
+  return (int)static_cast<uint8_t>(records[location++]);
+}
 
 uint16_t atoi16(const std::string& records, uint32_t& location) {
   uint16_t value = records[location]
@@ -65,6 +75,39 @@ uint16_t atoi32(const std::string& records, uint32_t& location) {
                            + (records[location+3] << 24);
   location += 4;
   return ntohl(value);
+}
+
+void printb8(uint8_t num) {
+  uint8_t andwith = 128;
+
+  for(int i = 0; i < 8; i++) {
+    printf("%d", ((num & andwith) != 0));
+    andwith >>= 1;
+  }
+}
+
+void printb16(uint16_t num) {
+  uint8_t andwith = 255;
+
+  for(int i = sizeof(num) - 1; i >= 0; i--) {
+    printb8((num >> (8 * i)) & andwith);
+    printf(" ");
+  }
+  printf("\n");
+}
+
+void printb32(uint32_t num) {
+  uint8_t andwith = 255;
+
+  for(int i = sizeof(num) - 1; i >= 0; i--) {
+    printb8((num >> (8 * i)) & andwith);
+    printf(" ");
+  }
+  printf("\n");
+}
+
+bool IS64(uint8_t c) {
+  return (isalnum(c) || (c == '+') || (c == '/'));
 }
 
 enum RCODE_t {
@@ -93,13 +136,8 @@ enum TYPE_t {
   MINFO = 14,
   MX    = 15,
   TXT   = 16,
-  AAAA  = 28
-};
-
-const char* TYPE_t_strings[] = {
-    "WTF", "A",  "NS",  "MD",  "MF",  "CNAME",  "SOA",  "MB",  "MG",  "MR",
-    "null",  "WKS",  "PTR",  "HINFO",  "MINFO",  "MX",  "TXT", "", "", "", "",
-    "", "", "", "", "", "", "", "AAAA"
+  AAAA  = 28,
+  RRSIG = 46
 };
 
 enum CLASS_t {
@@ -109,9 +147,8 @@ enum CLASS_t {
   HS = 4
 };
 
-const char* CLASS_t_strings[] = {
-    "WTF", "IN", "CS", "CH", "HS"
-};
+std::map<uint32_t, std::string> TYPE_t_strings;
+std::map<uint32_t, std::string> CLASS_t_strings;
 
 /* ************************************************************************** */
 /* *** dns server information *********************************************** */
@@ -136,6 +173,31 @@ bool operator==(const server& l, const server& r) {
 
 std::vector<server> initialize(){
   std::vector<server> vServers;
+
+  TYPE_t_strings[1] = "A";
+  TYPE_t_strings[2] = "NS";
+  TYPE_t_strings[3] = "MD";
+  TYPE_t_strings[4] = "MF";
+  TYPE_t_strings[5] = "CNAME";
+  TYPE_t_strings[6] = "SOA";
+  TYPE_t_strings[7] = "MB";
+  TYPE_t_strings[8] = "MG";
+  TYPE_t_strings[9] = "MR";
+  TYPE_t_strings[10] = "null";
+  TYPE_t_strings[11] = "WKS";
+  TYPE_t_strings[12] = "PTR";
+  TYPE_t_strings[13] = "HINFO";
+  TYPE_t_strings[14] = "MINFO";
+  TYPE_t_strings[15] = "MX";
+  TYPE_t_strings[16] = "TXT";
+  TYPE_t_strings[28] = "AAAA";
+  TYPE_t_strings[46] = "RRSIG";
+
+  CLASS_t_strings[1] = "IN";
+  CLASS_t_strings[2] = "CS";
+  CLASS_t_strings[3] = "CH";
+  CLASS_t_strings[4] = "HS";
+
   vServers.push_back(server("198.41.0.4",     "ns.internic.net" ));
   vServers.push_back(server("192.228.79.201", "ns1.isi.edu"     ));
   vServers.push_back(server("192.33.4.12",    "c.psi.net"       ));
@@ -158,6 +220,7 @@ struct dns_response {
     uint16_t Class;
     uint16_t Type;
     struct sockaddr_in6 Addr;
+    std::string rrsig;
 };
 
 /* ************************************************************************** */
@@ -171,9 +234,11 @@ std::string sendOut(const std::string&, const std::string&);
 std::string recParse(const std::string&, uint32_t&, bool = true);
 std::string ParseIP(const std::string&, bool);
 std::vector<server> nextParse(const std::string&, uint32_t, uint16_t, uint16_t, uint16_t);
-std::vector<server> parse(std::string response, uint32_t qSize);
-void attempt(std::vector<server>& servers, const header& pktHeader, const question& pktPayload, std::vector<server>& stack);
-void successParse(std::string records, uint32_t, uint16_t ANCOUNT);
+std::vector<server> parse(std::string, uint32_t);
+void attempt(std::vector<server>&, const header&, const question&, std::vector<server>&);
+void successParse(std::string, uint32_t, uint16_t);
+std::string parseRRSIG(std::string, uint32_t&);
+std::string parse64(const std::string&);
 
 /* ************************************************************************** */
 /* *** TODO ***************************************************************** */
@@ -186,7 +251,7 @@ void makeHeader(header& q) {
   q.queries = 1;
   q.answers = 0;
   q.nservers = 0;
-  q.addservers = 0;
+  q.addservers = 1;
   DEBUG_PRINT("packing finished");
 }
 
@@ -418,27 +483,26 @@ void successParse(std::string records, uint32_t location, uint16_t ANCOUNT) {
   uint16_t RDLENGTH;
   char buf[INET6_ADDRSTRLEN];
 
-  for(int i = 0; i<ANCOUNT; i++) {
-    resp.Name       = recParse(records, location);
-    resp.Type       = atoi16(records, location);
-    resp.Class      = atoi16(records, location);
-    resp.TimeToLive = atoi32(records, location);
-    RDLENGTH        = atoi16(records, location);
-    RDATA           = ParseIP(records.substr(location, RDLENGTH), RDLENGTH == IPV6_LEN);
-    location += RDLENGTH;
+  resp.Name       = recParse(records, location);
+  resp.Type       = atoi16(records, location);
+  resp.Class      = atoi16(records, location);
+  resp.TimeToLive = atoi32(records, location);
+  RDLENGTH        = atoi16(records, location);
+  RDATA           = ParseIP(records.substr(location, RDLENGTH), RDLENGTH == IPV6_LEN);
+  location += RDLENGTH;
+  resp.rrsig = parseRRSIG(records, location);
 
-    DEBUG_PRINT("Additional Records:");
-    DEBUG_PRINT("  NAME:     " << resp.Name       );
-    DEBUG_PRINT("  TYPE:     " << resp.Type       );
-    DEBUG_PRINT("  CLASS:    " << resp.Class      );
-    DEBUG_PRINT("  TTL:      " << resp.TimeToLive );
-    DEBUG_PRINT("  RDLENGTH: " << RDLENGTH        );
-    DEBUG_PRINT("  RDATA:    " << RDATA           );
+  DEBUG_PRINT("Additional Records:");
+  DEBUG_PRINT("  NAME:     " << resp.Name       );
+  DEBUG_PRINT("  TYPE:     " << resp.Type       );
+  DEBUG_PRINT("  CLASS:    " << resp.Class      );
+  DEBUG_PRINT("  TTL:      " << resp.TimeToLive );
+  DEBUG_PRINT("  RDLENGTH: " << RDLENGTH        );
+  DEBUG_PRINT("  RDATA:    " << RDATA           );
 
-    if(RDLENGTH == IPV6_LEN) {
-      inet_pton(AF_INET6, RDATA.c_str(), &(resp.Addr.sin6_addr));
-      responses.push_back(resp);
-    }
+  if(RDLENGTH == IPV6_LEN) {
+    inet_pton(AF_INET6, RDATA.c_str(), &(resp.Addr.sin6_addr));
+    responses.push_back(resp);
   }
 
   std::cout << responses.size() << " IPv6 Address Found For "
@@ -450,9 +514,103 @@ void successParse(std::string records, uint32_t location, uint16_t ANCOUNT) {
     std::cout << iter->Name << " " << iter->TimeToLive << " "
         << CLASS_t_strings[iter->Class] << " " << TYPE_t_strings[iter->Type]
         << " " << buf << std::endl;
+    std::cout << iter->rrsig << std::endl;
   }
 
   exit(0);
+}
+
+/**
+ * TODO
+ *
+ * @param records
+ * @param location
+ */
+std::string parseRRSIG(std::string records, uint32_t& location) {
+  std::ostringstream ostr;
+  std::string NAME;
+  std::string S_NAME;
+  std::string SIGNATURE;
+  uint8_t  ALGOR;
+  uint8_t  LABELS;
+  uint16_t TYPE;
+  uint16_t TYPE_COV;
+  uint16_t CLASS;
+  uint16_t RDLENGTH;
+  uint16_t SIGN_ID;
+  uint32_t TTL;
+  uint32_t ORG_TTL;
+  uint32_t SIG_EXP;
+  uint32_t T_SIGN;
+
+  NAME     = recParse(records, location);
+  TYPE     = atoi16  (records, location);
+  CLASS    = atoi16  (records, location);
+  TTL      = atoi32  (records, location);
+  RDLENGTH = atoi16  (records, location);
+  TYPE_COV = atoi16  (records, location);
+  ALGOR    = atoi8   (records, location);
+  LABELS   = atoi8   (records, location);
+  ORG_TTL  = atoi32  (records, location);
+  SIG_EXP  = atoi32  (records, location);
+  T_SIGN   = atoi32  (records, location);
+  SIGN_ID  = atoi16  (records, location);
+  S_NAME   = recParse(records, location);
+  location++;
+  SIGNATURE = records.substr(location, RDLENGTH - 20 - S_NAME.length());
+
+  ostr << NAME << " " << TTL << " " << CLASS_t_strings[CLASS] << " "
+       << TYPE_t_strings[TYPE] << " " << TYPE_t_strings[TYPE_COV] << " "
+       << int(ALGOR) << " " << int(LABELS) << " " << ORG_TTL << " " << SIG_EXP
+       << " " << T_SIGN << " " << SIGN_ID << " " << S_NAME << " "
+       << parse64(SIGNATURE) << std::endl;
+
+  return ostr.str();
+}
+
+/**
+ * TODO
+ *
+ * @param str
+ * @return
+ */
+std::string parse64(const std::string& str) {
+  uint32_t len = str.size();
+  uint32_t i = 0;
+  uint32_t j = 0;
+  uint32_t in = 0;
+  uint8_t  ca_4[4];
+  std::string ret;
+
+  printf("%d\n", str[in]);
+  while(len-- && (str[in] != '=') && IS64(str[in])) {
+    ca_4[i++] = str[in++];
+    if(i == 4) {
+      for(i = 0; i < 4; i++) {
+        ca_4[i] = char64.find(ca_4[i]);
+      }
+
+      ret += static_cast<uint8_t>((ca_4[0] << 2) + ((ca_4[1] & 0x30) >> 4));
+      ret += static_cast<uint8_t>(((ca_4[1] & 0xf) << 4) + ((ca_4[2] & 0x3c) >> 2));
+      ret += static_cast<uint8_t>(((ca_4[2] & 0x3) << 6) + ca_4[3]);
+
+      i = 0;
+    }
+  }
+
+  if(i) {
+    for(j = i; j < 4; j++)
+      ca_4[j] = 0;
+
+    for(j = 0; j < 4; j++)
+      ca_4[j] = char64.find(ca_4[j]);
+
+    ret += (ca_4[0] << 2) + ((ca_4[1] & 0x30) >> 4);
+    ret += ((ca_4[1] & 0xf) << 4) + ((ca_4[2] & 0x3c) >> 2);
+    ret += ((ca_4[2] & 0x3) << 6) + ca_4[3];
+  }
+
+  return ret;
 }
 
 /**
@@ -591,7 +749,7 @@ void attempt(std::vector<server>& servers, const header& pktHeader, const questi
     numbytes = dnsPacket.str().size() - 11;
 
     //send the packet
-    results = sendOut(servers[srvNum].IP(),dnsPacket.str());
+    results = sendOut(servers[srvNum].IP(), dnsPacket.str());
 
     //if we get an answer, extract the information
     newServerList = parse(results, numbytes);
