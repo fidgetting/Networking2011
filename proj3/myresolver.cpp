@@ -56,11 +56,6 @@ namespace it = boost::archive::iterators;
 #define IPV4_LEN 4
 #define IPV6_LEN 16
 
-static const std::string char64 =
-             "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-             "abcdefghijklmnopqrstuvwxyz"
-             "0123456789+/";
-
 std::string query_name;
 
 uint8_t atoi8(const std::string& records, uint32_t& location) {
@@ -68,52 +63,18 @@ uint8_t atoi8(const std::string& records, uint32_t& location) {
 }
 
 uint16_t atoi16(const std::string& records, uint32_t& location) {
-  uint16_t value = records[location]
-                           + (records[location+1] << 8);
-  location += 2;
+  uint16_t value = records[location++]
+                           + (records[location++] << 8);
   return ntohs(value);
 }
 
-uint16_t atoi32(const std::string& records, uint32_t& location) {
-  uint32_t value = records[location]
-                           + (records[location+1] << 8)
-                           + (records[location+2] << 16)
-                           + (records[location+3] << 24);
+uint32_t atoi32(const std::string& records, uint32_t& location) {
+  uint32_t value;
+
+  memcpy(&value, records.c_str() + location, 4);
   location += 4;
+
   return ntohl(value);
-}
-
-void printb8(uint8_t num) {
-  uint8_t andwith = 128;
-
-  for(int i = 0; i < 8; i++) {
-    printf("%d", ((num & andwith) != 0));
-    andwith >>= 1;
-  }
-}
-
-void printb16(uint16_t num) {
-  uint8_t andwith = 255;
-
-  for(int i = sizeof(num) - 1; i >= 0; i--) {
-    printb8((num >> (8 * i)) & andwith);
-    printf(" ");
-  }
-  printf("\n");
-}
-
-void printb32(uint32_t num) {
-  uint8_t andwith = 255;
-
-  for(int i = sizeof(num) - 1; i >= 0; i--) {
-    printb8((num >> (8 * i)) & andwith);
-    printf(" ");
-  }
-  printf("\n");
-}
-
-bool IS64(uint8_t c) {
-  return (isalnum(c) || (c == '+') || (c == '/'));
 }
 
 enum RCODE_t {
