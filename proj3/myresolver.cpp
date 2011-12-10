@@ -30,6 +30,12 @@
 #include <string>
 #include <vector>
 
+/* boost includes */
+#include <boost/archive/iterators/base64_from_binary.hpp>
+#include <boost/archive/iterators/insert_linebreaks.hpp>
+#include <boost/archive/iterators/transform_width.hpp>
+#include <boost/archive/iterators/ostream_iterator.hpp>
+namespace it = boost::archive::iterators;
 /* ************************************************************************** */
 /* *** Utility functions and defines **************************************** */
 /* ************************************************************************** */
@@ -527,6 +533,9 @@ void successParse(std::string records, uint32_t location, uint16_t ANCOUNT) {
  * @param location
  */
 std::string parseRRSIG(std::string records, uint32_t& location) {
+  typedef it::insert_linebreaks<it::base64_from_binary<it::transform_width<const char*, 6, 8> >, 72> base64_text;
+
+  std::stringstream os;
   std::ostringstream ostr;
   std::string NAME;
   std::string S_NAME;
@@ -559,58 +568,16 @@ std::string parseRRSIG(std::string records, uint32_t& location) {
   location++;
   SIGNATURE = records.substr(location, RDLENGTH - 20 - S_NAME.length());
 
+  std::copy(base64_text(SIGNATURE.c_str()), base64_text(SIGNATURE.c_str() + SIGNATURE.size()),
+      it::ostream_iterator<char>(os));
+
   ostr << NAME << " " << TTL << " " << CLASS_t_strings[CLASS] << " "
        << TYPE_t_strings[TYPE] << " " << TYPE_t_strings[TYPE_COV] << " "
        << int(ALGOR) << " " << int(LABELS) << " " << ORG_TTL << " " << SIG_EXP
        << " " << T_SIGN << " " << SIGN_ID << " " << S_NAME << " "
-       << parse64(SIGNATURE) << std::endl;
+       << os.str() << "=" << std::endl;
 
   return ostr.str();
-}
-
-/**
- * TODO
- *
- * @param str
- * @return
- */
-std::string parse64(const std::string& str) {
-  uint32_t len = str.size();
-  uint32_t i = 0;
-  uint32_t j = 0;
-  uint32_t in = 0;
-  uint8_t  ca_4[4];
-  std::string ret;
-
-  printf("%d\n", str[in]);
-  while(len-- && (str[in] != '=') && IS64(str[in])) {
-    ca_4[i++] = str[in++];
-    if(i == 4) {
-      for(i = 0; i < 4; i++) {
-        ca_4[i] = char64.find(ca_4[i]);
-      }
-
-      ret += static_cast<uint8_t>((ca_4[0] << 2) + ((ca_4[1] & 0x30) >> 4));
-      ret += static_cast<uint8_t>(((ca_4[1] & 0xf) << 4) + ((ca_4[2] & 0x3c) >> 2));
-      ret += static_cast<uint8_t>(((ca_4[2] & 0x3) << 6) + ca_4[3]);
-
-      i = 0;
-    }
-  }
-
-  if(i) {
-    for(j = i; j < 4; j++)
-      ca_4[j] = 0;
-
-    for(j = 0; j < 4; j++)
-      ca_4[j] = char64.find(ca_4[j]);
-
-    ret += (ca_4[0] << 2) + ((ca_4[1] & 0x30) >> 4);
-    ret += ((ca_4[1] & 0xf) << 4) + ((ca_4[2] & 0x3c) >> 2);
-    ret += ((ca_4[2] & 0x3) << 6) + ca_4[3];
-  }
-
-  return ret;
 }
 
 /**
