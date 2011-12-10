@@ -1,0 +1,14 @@
+Authors:
+  Jeffrey Mallal
+  Alex Norton
+  Nick Savage
+  Josh Sorensen
+
+A simple program to resolve dns requests.
+
+Known problems:
+  If the only record doesn't have an IP it will be unable to resolve the request
+  
+Requirements:
+  Requires boost to compile. Boost was used for base64 encoding of the dnssec
+  signature
