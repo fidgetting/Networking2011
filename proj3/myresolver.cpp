@@ -205,7 +205,6 @@ std::vector<server> parse(std::string, uint32_t);
 void attempt(std::vector<server>&, const header&, const question&, std::vector<server>&);
 void successParse(std::string, uint32_t, uint16_t);
 std::string parseRRSIG(std::string, uint32_t&);
-std::string parse64(const std::string&);
 
 /* ************************************************************************** */
 /* *** TODO ***************************************************************** */
