@@ -145,7 +145,8 @@ namespace soc {
       template<typename _Callable, typename... _Args>
       static void Register(_Callable&& _func, _Args&&... _args);
 
-      static std::shared_ptr<soc::Message> Get(const Stream& src);
+      template<typename _M_type>
+      static std::shared_ptr<_M_type> Get(const Stream& src);
 
       static uint16_t                                          _type_gen;
       static std::map<void*, uint16_t>                         _type_map;
@@ -271,6 +272,27 @@ namespace soc {
     _fact_map[type] = fact;
 
     delete msg;
+  }
+
+  /**
+   * TODO
+   *
+   * @param src
+   * @return
+   */
+  template<typename _M_type>
+  std::shared_ptr<_M_type> Message::Get(const Stream& src) {
+    uint16_t type;
+
+    src >> type;
+
+    std::shared_ptr<_M_type> msg =
+        std::dynamic_pointer_cast<_M_type>(
+            std::shared_ptr<Message>(_fact_map[type]()));
+
+    src >> (*msg);
+
+    return msg;
   }
 }
 

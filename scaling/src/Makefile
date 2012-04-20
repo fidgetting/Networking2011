@@ -3,10 +3,10 @@ BIN_DIR = ../bin
 INC_DIR = .
 
 CXX     = g++
-CFLAGS  = -g -O3 -std=c++0x
+CFLAGS  = -g -O3 -std=c++0x `pkg-config opencv --cflags`
 INCPATH = -I$(INC_DIR)
 EXE     = ../server
-LIBS    = -lboost_system -lboost_program_options
+LIBS    = -lboost_system -lboost_program_options `pkg-config opencv --libs`
 
 OBJS    = $(BIN_DIR)/main.o       \
           $(BIN_DIR)/Socket.o     \

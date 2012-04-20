@@ -683,21 +683,3 @@ ssize_t soc::Socket::Recv(void* data, size_t size, int flags) const {
 uint16_t                                               soc::Message::_type_gen = 0;
 std::map<void*, uint16_t>                              soc::Message::_type_map;
 std::map<uint16_t, std::function<soc::Message*(void)>> soc::Message::_fact_map;
-
-/**
- * TODO
- *
- * @param src
- * @return
- */
-std::shared_ptr<soc::Message> soc::Message::Get(const Stream& src) {
-  uint16_t type;
-
-  src >> type;
-
-  std::shared_ptr<Message> msg(_fact_map[type]());
-
-  src >> (*msg);
-
-  return msg;
-}
