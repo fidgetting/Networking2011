@@ -643,8 +643,8 @@ ssize_t soc::Socket::Send(const void* data, size_t size, int flags) const {
   // TODO throw exception
 
   while(total != size) {
-    if((ret = send(_fd, ptr + total, size - total, flags)) == -1);
-    // TODO throw exception
+    if((ret = send(_fd, ptr + total, size - total, flags)) == -1)
+      break;
     total += ret;
   }
 
@@ -668,8 +668,8 @@ ssize_t soc::Socket::Recv(void* data, size_t size, int flags) const {
   // TODO throw exception
 
   while(total != size) {
-    if((ret = recv(_fd, ptr + total, size - total, flags)) == -1);
-    // TODO throw exception
+    if((ret = recv(_fd, ptr + total, size - total, flags)) == -1)
+      break;
     total += ret;
   }
 
